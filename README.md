@@ -1,1 +1,1 @@
-# No more Ai Sloo User Interface 
+# No more Ai Slop User Interface 
