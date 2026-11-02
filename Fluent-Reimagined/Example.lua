@@ -1,4 +1,4 @@
-local Library, SaveManager, InterfaceManager, Extension = loadstring(readfile("Fluents/Fluent.lua"))()
+local Library, SaveManager, InterfaceManager, Extension = loadstring(game:HttpGet("https://raw.githubusercontent.com/StyearX/Ui-Library/refs/heads/main/Fluent-Reimagined/Fluent-Reimagined.lua"))()
 
 local Players: Players = game:GetService("Players")
 local UserInputService: UserInputService = game:GetService("UserInputService")
