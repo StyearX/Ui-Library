@@ -277,6 +277,88 @@ for _, Kind in { "Wide", "WideTonal", "WideDanger", "WideOutline", "WideAccent" 
 	})
 end
 
+local function FillButtonVariants(Host)
+	for _, Kind in { "Primary", "Tonal", "Danger", "Ghost", "Outline", "Accent" } do
+		Host:AddButton({
+			Title = Kind .. " pill",
+			Description = "Variant = " .. Kind,
+			Variant = Kind,
+			ButtonText = Kind,
+			ButtonIcon = "tabler:bolt",
+			ButtonSize = "Md",
+			Callback = function()
+				Library:Toast(Kind .. " pressed", 2)
+			end,
+		})
+	end
+
+	for _, Size in { "Sm", "Md", "Lg" } do
+		Host:AddButton({
+			Title = "Pill size " .. Size,
+			Variant = "Primary",
+			ButtonText = Size,
+			ButtonSize = Size,
+			Callback = function()
+				Library:Toast("Size " .. Size .. " pressed", 2)
+			end,
+		})
+	end
+
+	Host:AddButton({ Title = "Icon", Variant = "Icon", ButtonIcon = "tabler:star", Callback = function() end })
+	Host:AddButton({ Title = "IconTonal", Variant = "IconTonal", ButtonIcon = "tabler:heart", Callback = function() end })
+	Host:AddButton({ Title = "IconDanger", Variant = "IconDanger", ButtonIcon = "tabler:trash", IconSize = "Md", Callback = function() end })
+
+	for _, Kind in { "Wide", "WideTonal", "WideDanger", "WideOutline", "WideAccent" } do
+		Host:AddButton({
+			Title = Kind,
+			Variant = Kind,
+			ButtonIcon = "tabler:rocket",
+			Callback = function()
+				Library:Toast(Kind .. " pressed", 2)
+			end,
+		})
+	end
+end
+
+local ElementPopUp
+local BuildElementPopUp
+
+local PopUpSection = SubTabs.Buttons:AddSection("PopUp", { Icon = "tabler:app-window" })
+
+PopUpSection:AddButton({
+	Title = "Button Variants",
+	Description = "Create a PopUp containing every button variant.",
+	Icon = "tabler:click",
+	ButtonText = "Create",
+	Callback = function()
+		local VariantPopUp = Library:CreatePopUp({
+			Title = "Button Variants",
+			Subtitle = "All variants",
+			Icon = "tabler:click",
+			Size = Vector2.new(520, 420),
+			MinSize = Vector2.new(360, 240),
+			MaximizeSize = Vector2.new(780, 640),
+			ResizeAble = true,
+		})
+		local VariantSection = VariantPopUp:AddSection("Variants", { Icon = "tabler:click" })
+		FillButtonVariants(VariantSection)
+	end,
+})
+
+PopUpSection:AddButton({
+	Title = "Elements",
+	Description = "Open a PopUp containing other elements.",
+	Icon = "tabler:components",
+	ButtonText = "Open",
+	Callback = function()
+		if ElementPopUp and not ElementPopUp.Destroyed then
+			ElementPopUp:Open()
+		else
+			BuildElementPopUp()
+		end
+	end,
+})
+
 local LayoutSection = SubTabs.Buttons:AddSection("Space & Group", { Icon = "tabler:layout-rows" })
 
 LayoutSection:AddSpace({ Height = 8 })
@@ -737,6 +819,186 @@ InterfaceManager:SetFolder("Fluent Reimagined")
 InterfaceManager:BuildInterfaceSection(SubTabs.Appearance)
 
 Window:SelectTab(SubTabs.Buttons)
+
+local TogglePopUp = Library:CreatePopUp({
+	Title = "Toggles",
+	Subtitle = "PopUp",
+	Icon = "tabler:toggle-right",
+	Size = Vector2.new(560, 380),
+	MinSize = Vector2.new(400, 240),
+	MaximizeSize = Vector2.new(820, 600),
+	MinimizeKey = Enum.KeyCode.RightControl,
+	ResizeAble = true,
+})
+
+TogglePopUp:AddBarButtonAction({
+	Icon = "tabler:refresh",
+	Callback = function()
+		Library:Toast("Refreshed", 2)
+	end,
+})
+
+TogglePopUp:AddBarButtonToggle({
+	Icon = "tabler:pin",
+	Default = false,
+	Callback = function(Value)
+		Library:Toast(Value and "Pinned" or "Unpinned", 2)
+	end,
+})
+
+local GeneralTab = TogglePopUp:AddTab({ Title = "General", Icon = "tabler:settings" })
+local VisualTab = TogglePopUp:AddTab({ Title = "Visual", Icon = "tabler:eye" })
+local MiscTab = TogglePopUp:AddTab({ Title = "Misc", Icon = "tabler:dots" })
+
+local GeneralSection = GeneralTab:AddSection("General", { Icon = "tabler:settings" })
+GeneralSection:AddToggle("PopUpAutoSave", { Title = "Auto Save", Default = true })
+GeneralSection:AddToggle("PopUpNotifications", { Title = "Notifications", Default = false })
+GeneralSection:AddToggle("PopUpSounds", { Title = "Sounds", Variant = "Check", Default = true })
+
+local VisualSection = VisualTab:AddSection("Visual", { Icon = "tabler:eye" })
+VisualSection:AddToggle("PopUpAnimations", { Title = "Animations", Default = true })
+VisualSection:AddToggle("PopUpCompact", { Title = "Compact Mode", Variant = "Radio", Default = false })
+VisualSection:AddToggle("PopUpBorders", { Title = "Borders", Variant = "Check", Default = true })
+
+local MiscSection = MiscTab:AddSection("Misc", { Icon = "tabler:dots" })
+MiscSection:AddToggle("PopUpDebug", { Title = "Debug", Default = false })
+MiscSection:AddToggle("PopUpTelemetry", { Title = "Telemetry", Variant = "Radio", Default = false })
+
+BuildElementPopUp = function()
+	ElementPopUp = Library:CreatePopUp({
+		Title = "Elements",
+		Subtitle = "PopUp Test",
+		Icon = "tabler:components",
+		Size = Vector2.new(580, 420),
+		MinSize = Vector2.new(420, 260),
+		MaximizeSize = Vector2.new(860, 640),
+		ResizeAble = true,
+		SidebarTitle = "Elements",
+	})
+
+	local InputTab = ElementPopUp:AddTab({ Title = "Inputs", Icon = "tabler:forms" })
+	local ChoiceTab = ElementPopUp:AddTab({ Title = "Choices", Icon = "tabler:list-check" })
+	local InfoTab = ElementPopUp:AddTab({ Title = "Info", Icon = "tabler:info-circle" })
+
+	local ValueSection = InputTab:AddSection("Values", { Icon = "tabler:adjustments" })
+	ValueSection:AddSlider("PopUpSliderPercent", {
+		Title = "Slider",
+		Description = "Default variant",
+		Default = 50,
+		Min = 0,
+		Max = 100,
+		Rounding = 0,
+		Suffix = "%",
+		Callback = function(Value)
+			print("PopUp Slider", Value)
+		end,
+	})
+	ValueSection:AddSlider("PopUpSliderHue", {
+		Title = "Hue",
+		Variant = "Hue",
+		Default = 120,
+		Callback = function(Value)
+			print("PopUp Hue", Value)
+		end,
+	})
+	ValueSection:AddSlider("PopUpSliderDecimal", {
+		Title = "Decimal",
+		Default = 0.5,
+		Min = 0,
+		Max = 1,
+		Rounding = 2,
+	})
+
+	local TextSection = InputTab:AddSection("Text & Keys", { Icon = "tabler:keyboard" })
+	TextSection:AddInput("PopUpInput", {
+		Title = "Input",
+		Default = "",
+		Placeholder = "Type here...",
+		Finished = false,
+		Callback = function(Value)
+			print("PopUp Input", Value)
+		end,
+	})
+	TextSection:AddInput("PopUpInputNumeric", {
+		Title = "Numeric",
+		Numeric = true,
+		Finished = true,
+		MaxLength = 6,
+		Default = "100",
+		Width = 140,
+	})
+	TextSection:AddKeybind("PopUpKeybind", {
+		Title = "Keybind",
+		Default = "RightShift",
+		Mode = "Toggle",
+		Callback = function(Value)
+			print("PopUp Keybind", Value)
+		end,
+	})
+	TextSection:AddKeybind("PopUpKeybindHold", { Title = "Hold mode", Variant = "Keycap", Default = "E", Mode = "Hold" })
+
+	local DropdownSection = ChoiceTab:AddSection("Dropdown", { Icon = "tabler:selector" })
+	DropdownSection:AddDropdown("PopUpDropdown", {
+		Title = "Dropdown",
+		Values = { "Alpha", "Beta", "Gamma", "Delta" },
+		Default = 1,
+		Callback = function(Value)
+			print("PopUp Dropdown", Value)
+		end,
+	})
+	DropdownSection:AddDropdown("PopUpDropdownSegmented", {
+		Title = "Segmented",
+		Variant = "Segmented",
+		Values = { "Left", "Center", "Right" },
+		Default = 1,
+	})
+	DropdownSection:AddDropdown("PopUpDropdownMulti", {
+		Title = "Multi",
+		Values = { "Apple", "Banana", "Cherry", "Durian", "Elderberry", "Fig" },
+		Multi = true,
+		Searchable = true,
+		AllowNull = true,
+		Default = { "Apple", "Cherry" },
+		Width = 180,
+		Callback = function(Value)
+			print("PopUp Multi", HttpService:JSONEncode(Value))
+		end,
+	})
+
+	local ColorSection = ChoiceTab:AddSection("Colorpicker", { Icon = "tabler:color-picker" })
+	ColorSection:AddColorpicker("PopUpColorField", {
+		Title = "Field",
+		Variant = "Field",
+		PickerStyle = "Chromium",
+		Default = Color3.fromRGB(88, 101, 242),
+		Transparency = 0,
+		Callback = function(Value)
+			print("PopUp Color", Value)
+		end,
+	})
+	ColorSection:AddColorpicker("PopUpColorSwatch", {
+		Title = "Swatch",
+		Variant = "Swatch",
+		PickerStyle = "Fluent",
+		Default = Color3.fromRGB(34, 197, 94),
+		Transparency = 0,
+	})
+
+	local InfoSection = InfoTab:AddSection("Info", { Icon = "tabler:info-circle" })
+	InfoSection:AddParagraph({ Title = "Note", Content = "Note variant inside a PopUp.", Variant = "Note" })
+	InfoSection:AddParagraph({ Title = "Warning", Content = "Warning variant inside a PopUp.", Variant = "Warning" })
+	InfoSection:AddParagraph({ Title = "Success", Content = "Success variant inside a PopUp.", Variant = "Success" })
+	InfoSection:AddButton({
+		Title = "Toast",
+		Description = "Button inside the Elements PopUp.",
+		Icon = "tabler:bell",
+		ButtonText = "Show",
+		Callback = function()
+			Library:Toast("Hello from PopUp", 2)
+		end,
+	})
+end
+
 
 Library:Notify({
 	Title = "Fluent Reimagined",
