@@ -1,24 +1,5 @@
 --!optimize 2
 --!native
---[[
-    Fluent Reimagined Interface Suite
-    This luau/lua code is not intended to be modified.
-
-    Author: styear
-    License: MIT
-    Description: This UI is made by "styear" with some UI components from "Dawid/FluentUi" with a design inspired by "ProjectReal/Real Executor",
-    I spent about 1 month to design a good user experience and Visual UI, I also tried my best to optimize the code
-
-    Credit:
-    [richie0866/remote-spy](https://github.com/richie0866/remote-spy) - Assets for the UI, some of the code
-    [violin-suzutsuki/LinoriaLib](https://github.com/violin-suzutsuki/LinoriaLib) - Code for most of the elements, save manager
-    [7kayoh/Acrylic](https://github.com/7kayoh/Acrylic) - Porting richie0866's acrylic module to lua
-    [Latte Softworks & Kotera](https://github.com/latte-soft) - Bundler
-    [Reselim/flipper](https://github.com/reselim/flipper) - Flipper For animation and Motion system (Some of the code is highly modified from me)
-    [dawid/Fluent](https://github.com/dawid-scripts/Fluent) - base For the entire Ui Library system
-    [Project Real/Real Executor](https://discord.gg/projectreal) - The entire user experience and user interface visuals are inspired by ProjectReal with many visual modifications. 
---]]
-
 local CloneRef = cloneref or clonereference or function(Object: any): any
 	return Object
 end
