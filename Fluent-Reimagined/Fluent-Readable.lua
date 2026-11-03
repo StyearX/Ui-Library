@@ -1358,6 +1358,7 @@ local Library = {
 
 	Theme = "Light",
 	DialogOpen = false,
+	DialogHosts = {},
 	UseAcrylic = false,
 	Acrylic = false,
 	Transparency = false,
@@ -2882,6 +2883,122 @@ function Creator.AddSignal(signal: RBXScriptSignal, callback: (...any) -> ()): R
 	return connection
 end
 
+function Creator.IsTopmost(Object: GuiObject): boolean
+	local Gui = Object:FindFirstAncestorOfClass("ScreenGui")
+	local Container = Gui and Gui.Parent
+	if not Container or not Container:IsA("BasePlayerGui") then
+		return true
+	end
+
+	local function Probe(Point: Vector2): boolean?
+		local Success, Hits = pcall(Container.GetGuiObjectsAtPosition, Container, Point.X, Point.Y)
+		if not Success then
+			return true
+		end
+		for _, Hit in Hits do
+			if Hit == Object or Hit:IsDescendantOf(Object) then
+				return true
+			end
+			if (Hit.Active or Hit:IsA("GuiButton") or Hit:IsA("TextBox")) and not Hit:IsAncestorOf(Object) then
+				return false
+			end
+		end
+		return nil
+	end
+
+	local Mouse = UserInputService:GetMouseLocation()
+	local Result = Probe(Mouse - GuiService:GetGuiInset())
+	if Result == nil then
+		Result = Probe(Mouse)
+	end
+	return Result == true
+end
+
+local HoverStates = setmetatable({}, { __mode = "k" })
+
+local function GetHoverState(Object: GuiObject)
+	local State = HoverStates[Object]
+	if State then
+		return State
+	end
+
+	State = {
+		Enter = {},
+		Leave = {},
+		Inside = false,
+		Hovered = false,
+		Last = 0,
+		Token = 0,
+		X = 0,
+		Y = 0,
+	}
+	HoverStates[Object] = State
+
+	local function Fire(List)
+		for _, Callback in List do
+			Callback(State.X, State.Y)
+		end
+	end
+
+	local function Evaluate()
+		local Want = State.Inside and Creator.IsTopmost(Object)
+		if Want == State.Hovered then
+			return
+		end
+		State.Hovered = Want
+		if not Want then
+			Fire(State.Leave)
+			return
+		end
+		Fire(State.Enter)
+		State.Token += 1
+		local Token = State.Token
+		task.spawn(function()
+			while State.Hovered and State.Token == Token and Object.Parent do
+				task.wait(0.1)
+				if State.Hovered and State.Token == Token then
+					Evaluate()
+				end
+			end
+		end)
+	end
+
+	Creator.AddSignal(Object.MouseEnter, function(X, Y)
+		State.Inside = true
+		State.X, State.Y = X, Y
+		Evaluate()
+	end)
+
+	Creator.AddSignal(Object.MouseLeave, function(X, Y)
+		State.Inside = false
+		State.Hovered = false
+		State.Token += 1
+		State.X, State.Y = X, Y
+		Fire(State.Leave)
+	end)
+
+	Creator.AddSignal(Object.MouseMoved, function(X, Y)
+		local Now = os.clock()
+		if Now - State.Last < 0.04 then
+			return
+		end
+		State.Last = Now
+		State.X, State.Y = X, Y
+		State.Inside = true
+		Evaluate()
+	end)
+
+	return State
+end
+
+function Creator.OnHoverEnter(Object: GuiObject, Callback: (...any) -> ())
+	table.insert(GetHoverState(Object).Enter, Callback)
+end
+
+function Creator.OnHoverLeave(Object: GuiObject, Callback: (...any) -> ())
+	table.insert(GetHoverState(Object).Leave, Callback)
+end
+
 function Creator.Disconnect()
 	local signals = Creator.Signals
 	for index = #signals, 1, -1 do
@@ -3213,7 +3330,7 @@ function Creator.SpringMotor(
 	local checkDialog = if ignoreDialogCheck then false else prop == "BackgroundTransparency"
 
 	local function setValue(value: number, ignore: boolean?)
-		if checkDialog and not ignore and Library.DialogOpen then
+		if checkDialog and not ignore and Library:IsBlockedAt(target) then
 			return
 		end
 		if Library.Config.ReducedMotion then
@@ -5887,11 +6004,11 @@ function Library.CreateItemHover(Target: GuiButton, Config: { [string]: any }?)
 	Creator.AddSignal(Layer.Destroying, function()
 		Library.ItemHovers[Layer] = nil
 	end)
-	Creator.AddSignal(Target.MouseEnter, function()
+	Creator.OnHoverEnter(Target, function()
 		Hovered = true
 		Apply()
 	end)
-	Creator.AddSignal(Target.MouseLeave, function()
+	Creator.OnHoverLeave(Target, function()
 		Hovered = false
 		Pressed = false
 		Apply()
@@ -6031,12 +6148,12 @@ local function Shadow(Parent, Strength, Radius)
 end
 
 local function BindHover(Button, Hover)
-	Creator.AddSignal(Button.MouseEnter, function(...)
+	Creator.OnHoverEnter(Button, function(...)
 		if not Library.InputLocked then
 			Hover.Enter(...)
 		end
 	end)
-	Creator.AddSignal(Button.MouseLeave, Hover.Leave)
+	Creator.OnHoverLeave(Button, Hover.Leave)
 	Creator.AddSignal(Button.MouseButton1Down, function(...)
 		if not Library.InputLocked then
 			Hover.Down(...)
@@ -6751,11 +6868,11 @@ Components.Button = (function()
 			end
 		end
 
-		Creator.AddSignal(Button.Frame.MouseEnter, function()
+		Creator.OnHoverEnter(Button.Frame, function()
 			Set(Spec.Hover)
 			Text(Spec.HoverText)
 		end)
-		Creator.AddSignal(Button.Frame.MouseLeave, function()
+		Creator.OnHoverLeave(Button.Frame, function()
 			Set(Spec.Base)
 			Text(Spec.Text)
 		end)
@@ -6823,7 +6940,7 @@ Components.IconButton = (function()
 		local Base = Tonal and 0.9 or 1
 		local Motor, Set = Creator.SpringMotor(Base, Button.Frame, "BackgroundTransparency", Config.IgnoreDialog)
 
-		Creator.AddSignal(Button.Frame.MouseEnter, function()
+		Creator.OnHoverEnter(Button.Frame, function()
 			if Danger then
 				Creator.OverrideTag(Button.Frame, { BackgroundColor3 = "Danger" })
 				Creator.OverrideTag(Button.Icon, { ImageColor3 = "Danger" })
@@ -6835,7 +6952,7 @@ Components.IconButton = (function()
 				end
 			end
 		end)
-		Creator.AddSignal(Button.Frame.MouseLeave, function()
+		Creator.OnHoverLeave(Button.Frame, function()
 			Set(Base)
 			if Danger then
 				Creator.OverrideTag(Button.Frame, { BackgroundColor3 = "Hover" })
@@ -7621,10 +7738,10 @@ Components.Section = (function()
 		Creator.AddSignal(self.Trigger.MouseButton1Click, function()
 			self:ToggleCollapsed()
 		end)
-		Creator.AddSignal(self.Trigger.MouseEnter, function()
+		Creator.OnHoverEnter(self.Trigger, function()
 			Creator.Tween(self.Chevron, 0.15, { ImageTransparency = 0 })
 		end)
-		Creator.AddSignal(self.Trigger.MouseLeave, function()
+		Creator.OnHoverLeave(self.Trigger, function()
 			Creator.Tween(self.Chevron, 0.15, { ImageTransparency = 0.3 })
 		end)
 
@@ -8527,7 +8644,7 @@ Components.Element = (function()
 			end
 
 			local function IsBlocked()
-				return Library.DialogOpen and not (Section and Section.InModal)
+				return Library:IsBlockedAt(self.Body) and not (Section and Section.InModal)
 			end
 
 			local function Settle(Pressed)
@@ -8552,7 +8669,7 @@ Components.Element = (function()
 				SetBar(0)
 			end
 
-			Creator.AddSignal(self.Body.MouseEnter, function()
+			Creator.OnHoverEnter(self.Body, function()
 				if next(Library.Popups) ~= nil then
 					return
 				end
@@ -8560,7 +8677,7 @@ Components.Element = (function()
 				self:WakeHover()
 				Settle(false)
 			end)
-			Creator.AddSignal(self.Body.MouseLeave, function()
+			Creator.OnHoverLeave(self.Body, function()
 				Library.HoveredRows[self] = nil
 				self.Pressed = false
 				self.ClearHover()
@@ -8582,7 +8699,7 @@ Components.Element = (function()
 		else
 			self.Body.Active = false
 			self.Body.AutoButtonColor = false
-			Creator.AddSignal(self.Body.MouseEnter, function()
+			Creator.OnHoverEnter(self.Body, function()
 				Library:ClearRowHover()
 			end)
 		end
@@ -8612,94 +8729,96 @@ Components.TitleBar = (function()
 	local AddSignal = Creator.AddSignal
 	local Assets = Components.Assets
 
+	local function BarButton(Icon, Callback, Tinted)
+		Tinted = Tinted ~= false
+		local Button = {
+			Callback = Callback or function() end,
+			Toggled = false,
+			Hovering = false,
+		}
+
+		Button.Icon = New("ImageLabel", {
+			Image = Icon,
+			Size = UDim2.fromOffset(16, 16),
+			Position = UDim2.fromScale(0.5, 0.5),
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Name = "Icon",
+			ThemeTag = {
+				ImageColor3 = "SubText",
+			},
+		})
+
+		Button.Frame = New("TextButton", {
+			Size = UDim2.fromOffset(36, 34),
+			BackgroundTransparency = 1,
+			ThemeTag = {
+				BackgroundColor3 = "Hover",
+			},
+		}, {
+			Corner(8),
+			Button.Icon,
+		})
+
+		local Motor, SetTransparency = Creator.SpringMotor(1, Button.Frame, "BackgroundTransparency", true)
+
+		local function Settle()
+			local Active = Button.Hovering or Button.Toggled
+			SetTransparency(if Active then Creator.GetThemeProperty("HoverTransparency") else 1, true)
+			if Tinted then
+				Creator.OverrideTag(Button.Icon, { ImageColor3 = if Active then "Text" else "SubText" })
+			end
+		end
+
+		Creator.OnHoverEnter(Button.Frame, function()
+			if Library.InputLocked then
+				return
+			end
+			Button.Hovering = true
+			Settle()
+		end)
+		Creator.OnHoverLeave(Button.Frame, function()
+			Button.Hovering = false
+			Settle()
+		end)
+		AddSignal(Button.Frame.MouseButton1Down, function()
+			SetTransparency(Creator.GetThemeProperty("PressedTransparency"), true)
+		end)
+		AddSignal(Button.Frame.MouseButton1Up, function()
+			SetTransparency(Creator.GetThemeProperty("HoverTransparency"), true)
+		end)
+		AddSignal(Button.Frame.MouseButton1Click, function()
+			Button.Callback()
+		end)
+
+		Button.SetCallback = function(Func)
+			Button.Callback = Func
+		end
+
+		local ThemeConnection
+		Button.SetToggled = function(Value: boolean)
+			Button.Toggled = Value
+
+			if Value and not ThemeConnection then
+				ThemeConnection = Library.ThemeChanged:Connect(function()
+					if not Button.Frame.Parent then
+						ThemeConnection:Disconnect()
+						ThemeConnection = nil
+					elseif Button.Toggled then
+						Settle()
+					end
+				end)
+			end
+
+			Settle()
+		end
+
+		return Button
+	end
+
+	Components.BarButton = BarButton
+
 	return function(Config)
 		local TitleBar = {}
-
-		local function BarButton(Icon, Callback, Tinted)
-			Tinted = Tinted ~= false
-			local Button = {
-				Callback = Callback or function() end,
-				Toggled = false,
-				Hovering = false,
-			}
-
-			Button.Icon = New("ImageLabel", {
-				Image = Icon,
-				Size = UDim2.fromOffset(16, 16),
-				Position = UDim2.fromScale(0.5, 0.5),
-				AnchorPoint = Vector2.new(0.5, 0.5),
-				Name = "Icon",
-				ThemeTag = {
-					ImageColor3 = "SubText",
-				},
-			})
-
-			Button.Frame = New("TextButton", {
-				Size = UDim2.fromOffset(36, 34),
-				BackgroundTransparency = 1,
-				ThemeTag = {
-					BackgroundColor3 = "Hover",
-				},
-			}, {
-				Corner(8),
-				Button.Icon,
-			})
-
-			local Motor, SetTransparency = Creator.SpringMotor(1, Button.Frame, "BackgroundTransparency", true)
-
-			local function Settle()
-				local Active = Button.Hovering or Button.Toggled
-				SetTransparency(if Active then Creator.GetThemeProperty("HoverTransparency") else 1, true)
-				if Tinted then
-					Creator.OverrideTag(Button.Icon, { ImageColor3 = if Active then "Text" else "SubText" })
-				end
-			end
-
-			AddSignal(Button.Frame.MouseEnter, function()
-				if Library.InputLocked then
-					return
-				end
-				Button.Hovering = true
-				Settle()
-			end)
-			AddSignal(Button.Frame.MouseLeave, function()
-				Button.Hovering = false
-				Settle()
-			end)
-			AddSignal(Button.Frame.MouseButton1Down, function()
-				SetTransparency(Creator.GetThemeProperty("PressedTransparency"), true)
-			end)
-			AddSignal(Button.Frame.MouseButton1Up, function()
-				SetTransparency(Creator.GetThemeProperty("HoverTransparency"), true)
-			end)
-			AddSignal(Button.Frame.MouseButton1Click, function()
-				Button.Callback()
-			end)
-
-			Button.SetCallback = function(Func)
-				Button.Callback = Func
-			end
-
-			local ThemeConnection
-			Button.SetToggled = function(Value: boolean)
-				Button.Toggled = Value
-
-				if Value and not ThemeConnection then
-					ThemeConnection = Library.ThemeChanged:Connect(function()
-						if not Button.Frame.Parent then
-							ThemeConnection:Disconnect()
-							ThemeConnection = nil
-						elseif Button.Toggled then
-							Settle()
-						end
-					end)
-				end
-
-				Settle()
-			end
-
-			return Button
-		end
 
 		TitleBar.CreateButton = BarButton
 
@@ -8940,10 +9059,10 @@ Components.TitleBar = (function()
 				Glyph,
 			})
 
-			Creator.AddSignal(Light.MouseEnter, function()
+			Creator.OnHoverEnter(Light, function()
 				ShowGlyphs(true)
 			end)
-			Creator.AddSignal(Light.MouseLeave, function()
+			Creator.OnHoverLeave(Light, function()
 				ShowGlyphs(false)
 			end)
 			Creator.AddSignal(Light.MouseButton1Down, function()
@@ -9024,10 +9143,10 @@ Components.TitleBar = (function()
 				Action.Glyph,
 			})
 
-			Creator.AddSignal(Action.Light.MouseEnter, function()
+			Creator.OnHoverEnter(Action.Light, function()
 				ShowGlyphs(true)
 			end)
-			Creator.AddSignal(Action.Light.MouseLeave, function()
+			Creator.OnHoverLeave(Action.Light, function()
 				ShowGlyphs(false)
 			end)
 			Creator.AddSignal(Action.Light.MouseButton1Down, function()
@@ -9698,7 +9817,95 @@ Components.Dialog = (function()
 
 	function Dialog:Init(Window)
 		Dialog.Window = Window
+		Library.DialogHosts[Window.Root] = Window
 		return Dialog
+	end
+
+	function Library:ResolveDialogHost(Anchor)
+		local Current = Anchor
+		while Current do
+			local Host = Library.DialogHosts[Current]
+			if Host then
+				return Host
+			end
+			Current = Current.Parent
+		end
+		return nil
+	end
+
+	function Library:IsHostBlocked(Host): boolean
+		local Stack = Host.DialogStack
+		if not Stack then
+			return false
+		end
+		for _, Entry in next, Stack do
+			if Entry.Opened then
+				return true
+			end
+		end
+		return false
+	end
+
+	function Library:IsBlockedAt(Anchor): boolean
+		if not Library.DialogOpen then
+			return false
+		end
+		local Host = Anchor and Library:ResolveDialogHost(Anchor)
+		if Host then
+			return Library:IsHostBlocked(Host)
+		end
+		return true
+	end
+
+	function Library:CanOpenDialog(Host): boolean
+		Host = Host or Dialog.Window
+		if not Host then
+			return true
+		end
+		local Stack = Host.DialogStack
+		local Top = Stack and Stack[#Stack]
+		return Top == nil or Top.AllowNested == true
+	end
+
+	function Library:GetActiveDialog(Host)
+		Host = Host or Dialog.Window
+		local Stack = Host and Host.DialogStack
+		return Stack and Stack[#Stack]
+	end
+
+	function Dialog:ResolveHost(Options)
+		Options = Options or {}
+		local Host = Options.Host
+		if type(Host) == "string" then
+			Host = Library:GetPopUp(Host)
+		end
+		if Host == nil and typeof(Options.Anchor) == "Instance" then
+			Host = Library:ResolveDialogHost(Options.Anchor)
+		end
+		return Host or Dialog.Window
+	end
+
+	local function SyncState()
+		local Active = false
+		for _, Host in next, Library.DialogHosts do
+			if Library:IsHostBlocked(Host) then
+				Active = true
+				break
+			end
+		end
+		if Library.DialogOpen ~= Active then
+			Library.DialogOpen = Active
+			Library:Emit("DialogStateChanged", Active)
+		end
+	end
+
+	local function Unregister(Host, Entry)
+		local Stack = Host.DialogStack
+		local Index = Stack and table.find(Stack, Entry)
+		if Index then
+			table.remove(Stack, Index)
+		end
+		SyncState()
 	end
 
 	local DefaultTags = {
@@ -9716,21 +9923,41 @@ Components.Dialog = (function()
 			end
 		end
 
+		local Host = Dialog:ResolveHost(Options)
+		local Stack = Host.DialogStack
+		if not Stack then
+			Stack = {}
+			Host.DialogStack = Stack
+		end
+
+		local Top = Stack[#Stack]
+		local Blocked = (Top ~= nil and Top.AllowNested ~= true) or not Host.Root.Visible
+
 		local NewDialog = {
 			Buttons = 0,
 			Count = 0,
+			Host = Host,
+			Ghost = Blocked,
+			AllowNested = false,
+			Opened = false,
+			Closing = false,
+			Fit = 1,
 		}
+
+		if Top ~= nil and Blocked and Top.Pulse then
+			Top:Pulse()
+		end
 
 		NewDialog.TintFrame = New("TextButton", {
 			Size = UDim2.fromScale(1, 1),
 			BackgroundTransparency = 1,
 			ZIndex = 20,
-			Parent = Dialog.Window.Root,
+			Parent = if Blocked then nil else Host.Root,
 			ThemeTag = {
 				BackgroundColor3 = "Overlay",
 			},
 		}, {
-			Corner(Dialog.Window.CornerRadius or 13),
+			Corner(Host.CornerRadius or 13),
 		})
 
 		local TintMotor, TintTransparency = Creator.SpringMotor(1, NewDialog.TintFrame, "BackgroundTransparency", true)
@@ -9788,19 +10015,65 @@ Components.Dialog = (function()
 
 		local RootMotor, RootTransparency = Creator.SpringMotor(1, NewDialog.Root, "GroupTransparency")
 
+		local function ComputeFit(): number
+			if Host.Type ~= "PopUp" then
+				return 1
+			end
+			local Area = Host.Root.AbsoluteSize
+			local Size = NewDialog.Root.Size
+			local Width = math.max(Size.X.Offset, 1)
+			local Height = math.max(Size.Y.Offset, 1)
+			return math.clamp(math.min((Area.X - 24) / Width, (Area.Y - 24) / Height, 1), 0.5, 1)
+		end
+
+		function NewDialog:Refit()
+			if NewDialog.Ghost or NewDialog.Closing or not NewDialog.Opened then
+				return
+			end
+			local Fit = ComputeFit()
+			if Fit ~= NewDialog.Fit then
+				NewDialog.Fit = Fit
+				Scale(Fit)
+			end
+		end
+
+		function NewDialog:Pulse()
+			if NewDialog.Closing or NewDialog.Ghost then
+				return
+			end
+			Scale(1.025 * NewDialog.Fit)
+			task.delay(0.09, function()
+				if not NewDialog.Closing then
+					Scale(NewDialog.Fit)
+				end
+			end)
+		end
+
 		function NewDialog:Open()
-			Library.DialogOpen = true
-			NewDialog.Scale.Scale = 1.06
+			if NewDialog.Ghost or NewDialog.Closing or NewDialog.Opened then
+				return
+			end
+			NewDialog.Opened = true
+			NewDialog.Fit = ComputeFit()
+			NewDialog.Scale.Scale = 1.06 * NewDialog.Fit
 			TintTransparency(Creator.GetThemeProperty("OverlayTransparency"))
 			RootTransparency(0)
-			Scale(1)
+			Scale(NewDialog.Fit)
+			SyncState()
 		end
 
 		function NewDialog:Close()
-			Library.DialogOpen = false
+			if NewDialog.Closing then
+				return
+			end
+			NewDialog.Closing = true
+			if NewDialog.Ghost then
+				return
+			end
+			Unregister(Host, NewDialog)
 			TintTransparency(1)
 			RootTransparency(1)
-			Scale(1.06)
+			Scale(1.06 * NewDialog.Fit)
 			local Stroke = NewDialog.Root:FindFirstChildOfClass("UIStroke")
 			if Stroke then
 				Stroke:Destroy()
@@ -9843,6 +10116,23 @@ Components.Dialog = (function()
 			return Button
 		end
 
+		if Blocked then
+			task.defer(function()
+				NewDialog.TintFrame:Destroy()
+			end)
+		else
+			table.insert(Stack, NewDialog)
+			Library:ClosePopups()
+			NewDialog.TintFrame.Destroying:Connect(function()
+				Unregister(Host, NewDialog)
+			end)
+			task.delay(3, function()
+				if not NewDialog.Opened and not NewDialog.Closing then
+					NewDialog:Close()
+				end
+			end)
+		end
+
 		return NewDialog
 	end
 
@@ -9860,22 +10150,6 @@ Components.Menu = (function()
 	function MenuModule:Init(Window)
 		MenuModule.Window = Window
 		return MenuModule
-	end
-
-	local function GetGui()
-		if Library.MenuGUI and Library.MenuGUI.Parent then
-			return Library.MenuGUI
-		end
-		local Gui = New("ScreenGui", {
-			Name = "FluentMenu",
-			DisplayOrder = 1000,
-			IgnoreGuiInset = true,
-			ResetOnSpawn = false,
-			Parent = GUI.Parent,
-		})
-		ProtectGui(Gui)
-		Library.MenuGUI = Gui
-		return Gui
 	end
 
 	function Menu:NextOrder()
@@ -9945,7 +10219,7 @@ Components.Menu = (function()
 
 	function Menu:Resize()
 		local View = self.Scrim.AbsoluteSize
-		local WindowHeight = MenuModule.Window.Root.AbsoluteSize.Y
+		local WindowHeight = self.Host.Root.AbsoluteSize.Y
 		local Footer = #self.Buttons > 0 and 78 or 0
 		local Limit = math.min(self.MaxHeight or math.max(WindowHeight - 60, 320), math.max(View.Y - 48, 200))
 		local Content = self.Layout.AbsoluteContentSize.Y + 24
@@ -9969,8 +10243,11 @@ Components.Menu = (function()
 
 		if Anchor and Anchor.Parent and Placement ~= "Center" then
 			local AnchorGui = Anchor:FindFirstAncestorOfClass("ScreenGui")
-			local Shift = (AnchorGui and not AnchorGui.IgnoreGuiInset) and GuiService:GetGuiInset() or Vector2.zero
-			local Origin = Anchor.AbsolutePosition + Shift - self.Scrim.AbsolutePosition
+			local ScrimGui = self.Scrim:FindFirstAncestorOfClass("ScreenGui")
+			local Inset = GuiService:GetGuiInset()
+			local Shift = (AnchorGui and not AnchorGui.IgnoreGuiInset) and Inset or Vector2.zero
+			local ScrimShift = (ScrimGui and not ScrimGui.IgnoreGuiInset) and Inset or Vector2.zero
+			local Origin = Anchor.AbsolutePosition + Shift - (self.Scrim.AbsolutePosition + ScrimShift)
 			local Size = Anchor.AbsoluteSize
 			local Below = Origin.Y + Size.Y + Gap
 			local Above = Origin.Y - Height - Gap
@@ -10015,12 +10292,13 @@ Components.Menu = (function()
 			setmetatable(Menu, Elements)
 		end
 
-		local Window = MenuModule.Window
+		local Host = Components.Dialog:ResolveHost(Config)
 		local HasTitle = Config.Title ~= nil and Config.Title ~= ""
-		local DefaultWidth = math.clamp(Window.Root.AbsoluteSize.X - 80, 340, 520)
+		local DefaultWidth = math.clamp(Host.Root.AbsoluteSize.X - 80, 340, 520)
 
 		local self = setmetatable({
 			Type = "Menu",
+			Host = Host,
 			Library = Library,
 			Order = 0,
 			Sections = {},
@@ -10041,10 +10319,12 @@ Components.Menu = (function()
 			BackgroundTransparency = 1,
 			Visible = false,
 			ZIndex = 30,
-			Parent = GetGui(),
+			Parent = Host.Root,
 			ThemeTag = {
 				BackgroundColor3 = "Overlay",
 			},
+		}, {
+			Corner(Host.CornerRadius or 13),
 		})
 
 		local TintMotor, Tint = Creator.SpringMotor(1, self.Scrim, "BackgroundTransparency", true)
@@ -10118,15 +10398,36 @@ Components.Menu = (function()
 		local PanelMotor, Fade = Creator.SpringMotor(1, self.Panel, "GroupTransparency")
 		local ScaleMotor, Zoom = Creator.SpringMotor(1.06, self.Scale, "Scale")
 
+		function self:SetHost(NewHost)
+			if self.IsOpen or NewHost == self.Host then
+				return
+			end
+			self.Host = NewHost
+			self.Scrim.Parent = NewHost.Root
+			local Rounding = self.Scrim:FindFirstChildOfClass("UICorner")
+			if Rounding then
+				Rounding.CornerRadius = UDim.new(0, NewHost.CornerRadius or 13)
+			end
+		end
+
 		function self:Open(Anchor, Placement)
 			if Anchor then
 				self.AnchorObject = Anchor
+				if not self.IsOpen then
+					local Resolved = Library:ResolveDialogHost(Anchor)
+					if Resolved then
+						self:SetHost(Resolved)
+					end
+				end
 			end
 			if Placement then
 				self.Placement = Placement
 			end
 			if self.IsOpen then
 				self:Reposition()
+				return self
+			end
+			if not self.Host.Root.Visible or not Library:CanOpenDialog(self.Host) then
 				return self
 			end
 			self.IsOpen = true
@@ -10440,7 +10741,7 @@ Components.Tab = (function()
 				Tab:UpdateLabel()
 			end
 
-			Creator.AddSignal(Tab.Frame.MouseEnter, function()
+			Creator.OnHoverEnter(Tab.Frame, function()
 				if Library.InputLocked then
 					return
 				end
@@ -10451,7 +10752,7 @@ Components.Tab = (function()
 					Window:ShowNavTip(Tab)
 				end
 			end)
-			Creator.AddSignal(Tab.Frame.MouseLeave, function()
+			Creator.OnHoverLeave(Tab.Frame, function()
 				Tab.Hovering = false
 				Tab:ApplyState()
 				Tab:UpdateLabel()
@@ -11169,10 +11470,10 @@ Components.Window = (function()
 		})
 
 		local ToggleMotor, ToggleTransparency = Creator.SpringMotor(1, Window.ToggleButton, "BackgroundTransparency", true)
-		Creator.AddSignal(Window.ToggleButton.MouseEnter, function()
+		Creator.OnHoverEnter(Window.ToggleButton, function()
 			ToggleTransparency(0.93, true)
 		end)
-		Creator.AddSignal(Window.ToggleButton.MouseLeave, function()
+		Creator.OnHoverLeave(Window.ToggleButton, function()
 			ToggleTransparency(1, true)
 		end)
 		Creator.AddSignal(Window.ToggleButton.MouseButton1Down, function()
@@ -11221,10 +11522,10 @@ Components.Window = (function()
 		})
 
 		local SearchMotor, SearchTransparency = Creator.SpringMotor(1, Window.SearchButton, "BackgroundTransparency", true)
-		Creator.AddSignal(Window.SearchButton.MouseEnter, function()
+		Creator.OnHoverEnter(Window.SearchButton, function()
 			SearchTransparency(0.93, true)
 		end)
-		Creator.AddSignal(Window.SearchButton.MouseLeave, function()
+		Creator.OnHoverLeave(Window.SearchButton, function()
 			SearchTransparency(1, true)
 		end)
 
@@ -11982,12 +12283,12 @@ Components.Window = (function()
 			Handle.BackgroundTransparency = 1
 			if Spec.DX * Spec.DY == 0 then
 				Creator.OverrideTag(Handle, { BackgroundColor3 = "Accent" })
-				Creator.AddSignal(Handle.MouseEnter, function()
+				Creator.OnHoverEnter(Handle, function()
 					if not ResizeSession then
 						Handle.BackgroundTransparency = 0.82
 					end
 				end)
-				Creator.AddSignal(Handle.MouseLeave, function()
+				Creator.OnHoverLeave(Handle, function()
 					Handle.BackgroundTransparency = 1
 				end)
 			end
@@ -12493,10 +12794,11 @@ Components.Window = (function()
 		end
 
 		function Window:Dialog(Config)
-			local Dialog = DialogModule:Create()
+			local Host = DialogModule:ResolveHost(Config)
+			local Dialog = DialogModule:Create({ Host = Host })
 			Dialog.Title.Text = Config.Title
 
-			local WindowWidth = Window.Root.AbsoluteSize.X
+			local WindowWidth = Host.Root.AbsoluteSize.X
 			local Width = math.clamp(WindowWidth - 80, 300, 380)
 
 			local Content = Label({
@@ -12640,11 +12942,12 @@ Components.Window = (function()
 				return nil
 			end
 
-			local Dialog = DialogModule:Create()
+			local Host = DialogModule:ResolveHost(Config)
+			local Dialog = DialogModule:Create({ Host = Host })
 			Dialog.Title.Text = Config.Title or ""
 			Dialog.Title.Size = UDim2.new(1, -110, 0, 20)
 
-			local WindowSize = Window.Root.AbsoluteSize
+			local WindowSize = Host.Root.AbsoluteSize
 			local Width: number = math.clamp(WindowSize.X - 80, 320, 460)
 			local Height: number = math.clamp(WindowSize.Y - 60, 300, 440)
 			Dialog.Root.Size = UDim2.fromOffset(Width, Height)
@@ -12895,11 +13198,12 @@ Components.Window = (function()
 		function Window:Modal(Config: { [string]: any }): any
 			Config = Config or {}
 
-			local Modal = DialogModule:Create()
+			local Host = DialogModule:ResolveHost(Config)
+			local Modal = DialogModule:Create({ Host = Host })
 			Modal.Title.Text = Config.Title or "Modal"
 
 			local Closable: boolean = Config.Closable ~= false
-			local Width: number = Config.Width or math.clamp(Window.Root.AbsoluteSize.X - 80, 320, 420)
+			local Width: number = Config.Width or math.clamp(Host.Root.AbsoluteSize.X - 80, 320, 420)
 			local ContentHeight: number = 0
 
 			if Closable then
@@ -12953,13 +13257,15 @@ Components.Window = (function()
 
 			local function Resize()
 				local Footer: number = if Modal.Buttons > 0 then 74 else 20
-				local Limit: number = math.max(120, Window.Root.AbsoluteSize.Y - 60 - BodyTop - Footer)
+				local Limit: number = math.max(120, Host.Root.AbsoluteSize.Y - 60 - BodyTop - Footer)
 				local Height: number = math.min(BodyLayout.AbsoluteContentSize.Y, Limit)
 				Body.Size = UDim2.new(1, -40, 0, Height)
 				Modal.Root.Size = UDim2.fromOffset(Width, BodyTop + Height + Footer)
+				Modal:Refit()
 			end
 
 			Modal.Type = "Modal"
+			Modal.AllowNested = true
 			Modal.Library = Library
 			Modal.Container = Body
 			Modal.ScrollFrame = Body
@@ -13084,7 +13390,9 @@ Components.Window = (function()
 
 			Creator.AddSignal(BodyLayout:GetPropertyChangedSignal("AbsoluteContentSize"), Resize)
 
-			Library:SafeCallback(Config.Build, Modal)
+			if not Modal.Ghost then
+				Library:SafeCallback(Config.Build, Modal)
+			end
 
 			for _, Entry in next, Config.Buttons or {} do
 				Modal:Button(Entry.Title, Entry.Callback, Entry.Variant, Entry.Keep)
@@ -13283,10 +13591,10 @@ Components.Window = (function()
 			})
 
 			local _, Set = Creator.SpringMotor(1, Entry.Button, "BackgroundTransparency", true)
-			Creator.AddSignal(Entry.Button.MouseEnter, function()
+			Creator.OnHoverEnter(Entry.Button, function()
 				Set(Danger and 0.9 or Creator.GetThemeProperty("HoverTransparency"))
 			end)
-			Creator.AddSignal(Entry.Button.MouseLeave, function()
+			Creator.OnHoverLeave(Entry.Button, function()
 				Set(1)
 			end)
 			Creator.AddSignal(Entry.Button.MouseButton1Click, function()
@@ -13667,6 +13975,1579 @@ Components.Window = (function()
 		return Window
 	end
 end)()
+
+Components.PopUp = (function()
+	local Assets = Components.Assets
+
+	local PopUpModule = {
+		Stack = {},
+		Count = 0,
+	}
+
+	local HeaderHeight = 48
+	local DefaultTabWidth = 150
+	local BaseZIndex = 5
+	local MaxStack = 35
+	local DefaultSize = Vector2.new(520, 400)
+	local DefaultMinSize = Vector2.new(360, 240)
+	local DefaultMaximizeSize = Vector2.new(760, 560)
+
+	local function ParseSize(Value: any, Fallback: Vector2?): Vector2?
+		local Kind = typeof(Value)
+		if Kind == "UDim2" then
+			return Vector2.new(Value.X.Offset, Value.Y.Offset)
+		elseif Kind == "Vector2" then
+			return Value
+		elseif Kind == "string" then
+			local Width, Height = string.match(Value, "(%d+%.?%d*)%s*[xX%*]%s*(%d+%.?%d*)")
+			if Width and Height then
+				return Vector2.new(tonumber(Width) :: number, tonumber(Height) :: number)
+			end
+		elseif Kind == "table" then
+			local Width = tonumber(Value[1] or Value.Width or Value.X)
+			local Height = tonumber(Value[2] or Value.Height or Value.Y)
+			if Width and Height then
+				return Vector2.new(Width, Height)
+			end
+		end
+		return Fallback
+	end
+
+	return function(Config)
+		Config = Config or {}
+		assert(Config.Title, "PopUp - Missing Title")
+
+		PopUpModule.Count += 1
+
+		local Parent = Config.Parent or Library.GUI
+		local Radius = math.clamp(tonumber(Config.CornerRadius) or 13, 0, 24)
+		local InitialSize = ParseSize(Config.Size, DefaultSize) :: Vector2
+		local MinSize = ParseSize(Config.MinSize, DefaultMinSize) :: Vector2
+		local Connections = {}
+
+		local FallbackMaximize = Vector2.new(math.max(DefaultMaximizeSize.X, InitialSize.X), math.max(DefaultMaximizeSize.Y, InitialSize.Y))
+
+		local PopUp = {
+			Type = "PopUp",
+			Id = Config.Id or `PopUp{PopUpModule.Count}`,
+			Name = Config.Title,
+			Library = Library,
+			Tabs = {},
+			Selected = nil,
+			Opened = false,
+			Maximized = false,
+			Minimized = false,
+			Minimizable = Config.Minimizable ~= false,
+			MinimizeKey = Config.MinimizeKey,
+			MinimizeKeybind = Config.MinimizeKeybind,
+			IsResizing = false,
+			IsDragging = false,
+			Destroyed = false,
+			Opacity = 1,
+			ResizeAble = Config.ResizeAble == true,
+			Draggable = Config.Draggable ~= false,
+			MaximizeSize = ParseSize(Config.MaximizeSize, FallbackMaximize),
+			DefaultMaximizeSize = FallbackMaximize,
+			Actions = {},
+			ActionCount = 0,
+			MinSize = Vector2.new(math.min(MinSize.X, InitialSize.X), math.min(MinSize.Y, InitialSize.Y)),
+			PillPending = false,
+			SwitchToken = 0,
+			TabWidth = tonumber(Config.TabWidth) or DefaultTabWidth,
+		}
+
+		local function Track(Signal, Callback)
+			local Connection = Creator.AddSignal(Signal, Callback)
+			table.insert(Connections, Connection)
+			return Connection
+		end
+
+		local function GetViewport(): Vector2
+			local Absolute = Parent.AbsoluteSize
+			if Absolute.X > 0 and Absolute.Y > 0 then
+				return Absolute
+			end
+			local CurrentCamera = Workspace.CurrentCamera
+			return CurrentCamera and CurrentCamera.ViewportSize or Vector2.new(1920, 1080)
+		end
+
+		local function LimitSize(Value: Vector2): Vector2
+			local View = GetViewport()
+			local Maximum = PopUp.MaximizeSize or View
+			local MaxX = math.max(math.min(Maximum.X, View.X), PopUp.MinSize.X)
+			local MaxY = math.max(math.min(Maximum.Y, View.Y), PopUp.MinSize.Y)
+			return Vector2.new(
+				math.clamp(Value.X, PopUp.MinSize.X, MaxX),
+				math.clamp(Value.Y, PopUp.MinSize.Y, MaxY)
+			)
+		end
+
+		local function LimitPosition(Position: Vector2, Size: Vector2): Vector2
+			local View = GetViewport()
+			local MinX = 80 - Size.X
+			return Vector2.new(
+				math.clamp(Position.X, MinX, math.max(View.X - 80, MinX)),
+				math.clamp(Position.Y, 0, math.max(View.Y - 44, 0))
+			)
+		end
+
+		local function InsidePosition(Position: Vector2, Size: Vector2): Vector2
+			local View = GetViewport()
+			return Vector2.new(
+				math.clamp(Position.X, 0, math.max(View.X - Size.X, 0)),
+				math.clamp(Position.Y, 0, math.max(View.Y - Size.Y, 0))
+			)
+		end
+
+		local Size = LimitSize(InitialSize)
+		local View = GetViewport()
+		local Shift = (PopUpModule.Count % 6) * 26
+		local Position = ParseSize(Config.Position, nil)
+			or Vector2.new((View.X - Size.X) / 2 + Shift, (View.Y - Size.Y) / 2 + Shift)
+		Position = LimitPosition(Position, Size)
+
+		PopUp.RootCorner = Corner(Radius)
+		PopUp.RootStroke = New("UIStroke", {
+			ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+			ThemeTag = {
+				Color = "AcrylicBorder",
+			},
+		})
+
+		PopUp.Root = New("Frame", {
+			Name = "PopUp",
+			Size = UDim2.fromOffset(Size.X, Size.Y),
+			Position = UDim2.fromOffset(Position.X, Position.Y),
+			BackgroundTransparency = 1,
+			Visible = false,
+			ZIndex = BaseZIndex,
+			Parent = Parent,
+		}, {
+			PopUp.RootCorner,
+			PopUp.RootStroke,
+		})
+
+		PopUp.CornerRadius = Radius
+		Library.DialogHosts[PopUp.Root] = PopUp
+
+		PopUp.Paint = CreateWindowPaint(Radius)
+		PopUp.Paint.Frame.Parent = PopUp.Root
+
+		local function CurrentSize(): Vector2
+			return Vector2.new(PopUp.Root.Size.X.Offset, PopUp.Root.Size.Y.Offset)
+		end
+
+		local function CurrentPosition(): Vector2
+			return Vector2.new(PopUp.Root.Position.X.Offset, PopUp.Root.Position.Y.Offset)
+		end
+
+		PopUp.LogoImage = New("ImageLabel", {
+			Image = "",
+			Size = UDim2.fromOffset(22, 22),
+			LayoutOrder = 1,
+			BackgroundTransparency = 1,
+			Visible = false,
+		}, {
+			New("UICorner", {
+				CornerRadius = UDim.new(0, 0),
+			}),
+		})
+
+		PopUp.TitleLabel = Label({
+			RichText = true,
+			Text = Config.Title,
+			TextSize = 15,
+			Weight = "SemiBold",
+			Size = UDim2.fromScale(0, 1),
+			AutomaticSize = Enum.AutomaticSize.X,
+			LayoutOrder = 2,
+		})
+
+		local SubTitleText = Config.Subtitle or Config.SubTitle or ""
+
+		PopUp.SubTitleLabel = Label({
+			RichText = true,
+			Text = SubTitleText,
+			TextSize = 12,
+			Weight = "Regular",
+			Tag = "SubText",
+			Size = UDim2.fromScale(0, 1),
+			AutomaticSize = Enum.AutomaticSize.X,
+			LayoutOrder = 3,
+			Visible = SubTitleText ~= "",
+		})
+
+		PopUp.Brand = New("Frame", {
+			Size = UDim2.new(1, -110, 1, 0),
+			Position = UDim2.fromOffset(16, 0),
+			BackgroundTransparency = 1,
+			ClipsDescendants = true,
+		}, {
+			New("UIListLayout", {
+				FillDirection = Enum.FillDirection.Horizontal,
+				VerticalAlignment = Enum.VerticalAlignment.Center,
+				SortOrder = Enum.SortOrder.LayoutOrder,
+				Padding = UDim.new(0, 8),
+			}),
+			PopUp.LogoImage,
+			PopUp.TitleLabel,
+			PopUp.SubTitleLabel,
+		})
+
+		PopUp.Controls = New("Frame", {
+			Size = UDim2.fromOffset(0, 34),
+			AutomaticSize = Enum.AutomaticSize.X,
+			AnchorPoint = Vector2.new(1, 0.5),
+			Position = UDim2.new(1, -10, 0.5, 0),
+			BackgroundTransparency = 1,
+		}, {
+			New("UIListLayout", {
+				FillDirection = Enum.FillDirection.Horizontal,
+				SortOrder = Enum.SortOrder.LayoutOrder,
+				Padding = UDim.new(0, 2),
+			}),
+		})
+
+		PopUp.MinButton = Components.BarButton(Assets.Min, function()
+			PopUp:Minimize()
+		end)
+		PopUp.MinButton.Frame.LayoutOrder = 1
+		PopUp.MinButton.Frame.Visible = PopUp.Minimizable
+		PopUp.MinButton.Frame.Parent = PopUp.Controls
+
+		PopUp.MaxButton = Components.BarButton(Assets.Max, function()
+			PopUp:ToggleMaximize()
+		end)
+		PopUp.MaxButton.Frame.LayoutOrder = 2
+		PopUp.MaxButton.Frame.Parent = PopUp.Controls
+
+		PopUp.CloseButton = Components.BarButton(Assets.Close, function()
+			PopUp:Close()
+			PopUp:Destroy()
+		end)
+		PopUp.CloseButton.Frame.LayoutOrder = 3
+		PopUp.CloseButton.Frame.Visible = Config.Closable ~= false
+		PopUp.CloseButton.Frame.Parent = PopUp.Controls
+
+		PopUp.Header = New("Frame", {
+			Size = UDim2.new(1, 0, 0, HeaderHeight),
+			BackgroundTransparency = 1,
+			ZIndex = 3,
+		}, {
+			PopUp.Brand,
+			PopUp.Controls,
+			New("Frame", {
+				Size = UDim2.new(1, 0, 0, 1),
+				Position = UDim2.new(0, 0, 1, -1),
+				BackgroundTransparency = 0.9,
+				ThemeTag = {
+					BackgroundColor3 = "TitleBarLine",
+				},
+			}),
+		})
+
+		Creator.AddSignal(PopUp.Controls:GetPropertyChangedSignal("AbsoluteSize"), function()
+			PopUp.Brand.Size = UDim2.new(1, -(PopUp.Controls.AbsoluteSize.X + 26), 1, 0)
+		end)
+
+		PopUp.Pill = New("Frame", {
+			Size = UDim2.new(1, 0, 0, 38),
+			AnchorPoint = Vector2.new(0.5, 0),
+			Position = UDim2.new(0.5, 0, 0, 0),
+			BackgroundTransparency = 1,
+			ZIndex = 1,
+			ThemeTag = {
+				BackgroundColor3 = "Tab",
+			},
+		}, {
+			Corner(10),
+		})
+
+		PopUp.TabList = New("Frame", {
+			Size = UDim2.new(1, 0, 0, 0),
+			AutomaticSize = Enum.AutomaticSize.Y,
+			BackgroundTransparency = 1,
+			ZIndex = 2,
+		}, {
+			New("UIListLayout", {
+				Padding = UDim.new(0, 1),
+				SortOrder = Enum.SortOrder.LayoutOrder,
+				HorizontalAlignment = Enum.HorizontalAlignment.Center,
+			}),
+		})
+
+		local SidebarTitleText = Config.SidebarTitle or ""
+		local SidebarHeadHeight = if SidebarTitleText ~= "" then 42 else 0
+
+		PopUp.SidebarTitle = Label({
+			Text = SidebarTitleText,
+			TextSize = 22,
+			Weight = "Bold",
+			Position = UDim2.fromOffset(10, 0),
+			Size = UDim2.new(1, -20, 0, 28),
+			TextTruncate = Enum.TextTruncate.AtEnd,
+			Visible = SidebarTitleText ~= "",
+		})
+
+		PopUp.TabScroll = New("ScrollingFrame", {
+			Size = UDim2.new(1, 0, 1, -SidebarHeadHeight),
+			Position = UDim2.fromOffset(0, SidebarHeadHeight),
+			BackgroundTransparency = 1,
+			ScrollBarImageTransparency = 1,
+			ScrollBarThickness = 0,
+			BorderSizePixel = 0,
+			CanvasSize = UDim2.fromScale(0, 0),
+			AutomaticCanvasSize = Enum.AutomaticSize.Y,
+			ScrollingDirection = Enum.ScrollingDirection.Y,
+		}, {
+			PopUp.Pill,
+			PopUp.TabList,
+		})
+
+		PopUp.SidebarInner = New("Frame", {
+			Position = UDim2.fromOffset(14, 18),
+			Size = UDim2.new(1, -24, 1, -36),
+			BackgroundTransparency = 1,
+		}, {
+			PopUp.SidebarTitle,
+			PopUp.TabScroll,
+		})
+
+		PopUp.Sidebar = New("Frame", {
+			Name = "Sidebar",
+			Size = UDim2.new(0, PopUp.TabWidth, 1, 0),
+			BackgroundTransparency = 1,
+			ClipsDescendants = true,
+			Visible = false,
+		}, {
+			PopUp.SidebarInner,
+		})
+
+		PopUp.PageHolder = New("Frame", {
+			Name = "Pages",
+			Size = UDim2.fromScale(1, 1),
+			BackgroundTransparency = 1,
+			ClipsDescendants = true,
+		})
+
+		PopUp.SidebarShade = New("Frame", {
+			Size = UDim2.new(0, 12, 1, 0),
+			Position = UDim2.fromOffset(PopUp.TabWidth, 0),
+			BackgroundColor3 = Color3.new(0, 0, 0),
+			BackgroundTransparency = 0.82,
+			BorderSizePixel = 0,
+			Active = false,
+			Visible = false,
+			ZIndex = 20,
+		}, {
+			New("UIGradient", {
+				Rotation = 0,
+				Transparency = NumberSequence.new(0, 1),
+			}),
+		})
+
+		PopUp.Content = New("Frame", {
+			Name = "Content",
+			Position = UDim2.fromOffset(0, HeaderHeight),
+			Size = UDim2.new(1, 0, 1, -HeaderHeight),
+			BackgroundTransparency = 1,
+			ClipsDescendants = true,
+		}, {
+			PopUp.Sidebar,
+			PopUp.PageHolder,
+			PopUp.SidebarShade,
+		})
+
+		local GripLines = {}
+		for _, Spec in { { 12, 8 }, { 6, 11.5 } } do
+			table.insert(GripLines, New("Frame", {
+				Size = UDim2.fromOffset(Spec[1], 1.5),
+				AnchorPoint = Vector2.new(0.5, 0.5),
+				Position = UDim2.fromOffset(Spec[2], Spec[2]),
+				Rotation = -45,
+				BackgroundTransparency = 0.5,
+				BorderSizePixel = 0,
+				ThemeTag = {
+					BackgroundColor3 = "SubText",
+				},
+			}, {
+				Corner(2),
+			}))
+		end
+
+		PopUp.Grip = New("Frame", {
+			Name = "ResizeGrip",
+			Size = UDim2.fromOffset(18, 18),
+			AnchorPoint = Vector2.new(1, 1),
+			Position = UDim2.fromScale(1, 1),
+			BackgroundTransparency = 1,
+			Visible = PopUp.ResizeAble,
+			ZIndex = 10,
+		}, GripLines)
+
+		PopUp.BodyCorner = Corner(Radius)
+		PopUp.Body = New("Frame", {
+			Name = "Body",
+			Size = UDim2.fromScale(1, 1),
+			BackgroundTransparency = 1,
+			ClipsDescendants = true,
+			Parent = PopUp.Root,
+		}, {
+			PopUp.BodyCorner,
+			PopUp.Content,
+			PopUp.Header,
+			PopUp.Grip,
+		})
+
+		if Library.UseAcrylic then
+			PopUp.AcrylicBlur = Acrylic.Blur(0.0006)
+			PopUp.AcrylicBlur.Frame.Parent = PopUp.Paint.Frame
+			PopUp.AcrylicBlur.AddParent(PopUp.Root)
+			PopUp.AcrylicBlur.SetRadius(Radius)
+		end
+
+		local function SetScrolling(Enabled: boolean)
+			local function Apply(Page)
+				if Page and Page:IsA("ScrollingFrame") then
+					Page.ScrollingEnabled = Enabled
+				end
+			end
+			Apply(PopUp.RootPage)
+			for _, Tab in PopUp.Tabs do
+				Apply(Tab.Container)
+			end
+		end
+
+		local function MakePage(PageName: string, Scroll: boolean, Raw: boolean?, Tab: any?)
+			local Children = {}
+			local Layout
+
+			if not Raw then
+				Layout = New("UIListLayout", {
+					Padding = UDim.new(0, if Tab then 16 else 12),
+					SortOrder = Enum.SortOrder.LayoutOrder,
+				})
+				table.insert(Children, Layout)
+				table.insert(Children, New("UIPadding", {
+					PaddingLeft = UDim.new(0, if Tab then 22 else 14),
+					PaddingRight = UDim.new(0, if Tab then 22 else 14),
+					PaddingTop = UDim.new(0, if Tab then 20 else 14),
+					PaddingBottom = UDim.new(0, if Tab then 32 else 18),
+				}))
+
+				if Tab then
+					Tab.TitleLabel = Label({
+						Text = PageName,
+						TextSize = 22,
+						Weight = "Bold",
+						Size = UDim2.new(1, 0, 0, 26),
+						LayoutOrder = 0,
+						Visible = Tab.ShowTitle,
+					})
+					Creator.TagText(Tab.TitleLabel, "Text", Tab.IconColor)
+					table.insert(Children, Tab.TitleLabel)
+				end
+			end
+
+			local Properties = {
+				Name = PageName,
+				Size = UDim2.fromScale(1, 1),
+				BackgroundTransparency = 1,
+				Visible = false,
+				Parent = PopUp.PageHolder,
+			}
+
+			if Scroll then
+				Properties.BottomImage = Components.Assets.ScrollBottom
+				Properties.MidImage = Components.Assets.ScrollMid
+				Properties.TopImage = Components.Assets.ScrollTop
+				Properties.BorderSizePixel = 0
+				Properties.ScrollBarThickness = 4
+				Properties.ScrollBarImageTransparency = 0.72
+				Properties.CanvasSize = UDim2.fromScale(0, 0)
+				Properties.ScrollingDirection = Enum.ScrollingDirection.Y
+				Properties.ThemeTag = {
+					ScrollBarImageColor3 = "Text",
+				}
+			else
+				Properties.ClipsDescendants = true
+			end
+
+			local Page = New(Scroll and "ScrollingFrame" or "Frame", Properties, Children)
+
+			if Scroll and Layout then
+				Creator.AddSignal(Layout:GetPropertyChangedSignal("AbsoluteContentSize"), function()
+					Page.CanvasSize = UDim2.new(0, 0, 0, Layout.AbsoluteContentSize.Y + (if Tab then 52 else 32))
+				end)
+			end
+
+			return Page
+		end
+
+		local function BuildHost(Host, Page)
+			Host.Container = Page
+			Host.ScrollFrame = Page
+			Host.Library = Library
+			Host.Order = 0
+			Host.Implicit = nil
+
+			function Host:NextOrder()
+				Host.Order = Host.Order + 1
+				return Host.Order
+			end
+
+			function Host:GetHolder()
+				if not Host.Implicit then
+					Host.Implicit = Components.Section("", Host.Container, {
+						LayoutOrder = Host:NextOrder(),
+						IconColor = Host.IconColor,
+					})
+				end
+				return Host.Implicit
+			end
+
+			function Host:AddSection(SectionTitle, SectionConfig)
+				if type(SectionTitle) == "table" then
+					SectionConfig = SectionTitle
+					SectionTitle = SectionConfig.Title
+				end
+				SectionConfig = SectionConfig or {}
+				Host.Implicit = nil
+				local Holder = Components.Section(SectionTitle, Host.Container, {
+					LayoutOrder = Host:NextOrder(),
+					IconColor = SectionConfig.IconColor or Host.IconColor,
+					Icon = SectionConfig.Icon,
+					IconSize = SectionConfig.IconSize,
+					Accordion = SectionConfig.Accordion,
+					Collapsed = SectionConfig.Collapsed,
+					Callback = SectionConfig.Callback,
+					Id = SectionConfig.Id or `PopUp:{PopUp.Id}:{Host.Name}:{SectionTitle or Host.Order}`,
+				})
+				if SectionConfig.Locked then
+					Holder:SetLocked(true, SectionConfig.LockedReason)
+				end
+				local Section = Components.SectionApi(Holder, Host, Host.Container)
+				Library.Events.SectionAdded:Fire(Section, Host)
+				return Section
+			end
+
+			return setmetatable(Host, Elements)
+		end
+
+		PopUp.RootPage = MakePage("Main", true, false)
+		PopUp.RootPage.Visible = true
+
+		local function ShowPage(Page: GuiObject?, Animate: boolean?)
+			for _, Tab in PopUp.Tabs do
+				if Tab.Container ~= Page then
+					Tab.Container.Visible = false
+				end
+			end
+			if PopUp.RootPage ~= Page then
+				PopUp.RootPage.Visible = false
+			end
+
+			if PopUp.SwitchTween then
+				PopUp.SwitchTween:Cancel()
+				PopUp.SwitchTween = nil
+			end
+			if PopUp.SwitchTarget then
+				PopUp.SwitchTarget.Position = UDim2.fromOffset(0, 0)
+				PopUp.SwitchTarget = nil
+			end
+
+			if not Page then
+				return
+			end
+			Page.Visible = true
+
+			if not Animate or Library.Config.ReducedMotion or not Library.Config.PageTransition then
+				return
+			end
+
+			Page.Position = UDim2.fromOffset(0, 14)
+			PopUp.SwitchTarget = Page
+
+			local Tween = Creator.Tween(Page, 0.26, { Position = UDim2.fromOffset(0, 0) }, Enum.EasingStyle.Quint)
+			PopUp.SwitchTween = Tween
+
+			Tween.Completed:Once(function()
+				if PopUp.SwitchTween == Tween then
+					PopUp.SwitchTween = nil
+					if PopUp.SwitchTarget == Page then
+						Page.Position = UDim2.fromOffset(0, 0)
+						PopUp.SwitchTarget = nil
+					end
+				end
+			end)
+		end
+
+		local function Relayout()
+			local HasTabs = #PopUp.Tabs > 0
+			local Offset = if HasTabs then PopUp.TabWidth else 0
+			PopUp.Sidebar.Visible = HasTabs
+			PopUp.SidebarShade.Visible = HasTabs
+			PopUp.PageHolder.Position = UDim2.fromOffset(Offset, 0)
+			PopUp.PageHolder.Size = UDim2.new(1, -Offset, 1, 0)
+		end
+
+		function PopUp:UpdatePill(Instant)
+			local Tab = PopUp.Selected
+			local Pill = PopUp.Pill
+
+			if not Tab or not Tab.Frame.Visible or Tab.Frame.AbsoluteSize.Y <= 0 then
+				Pill.BackgroundTransparency = 1
+				return
+			end
+
+			local Y = Tab.Frame.AbsolutePosition.Y - PopUp.TabScroll.AbsolutePosition.Y + PopUp.TabScroll.CanvasPosition.Y
+			local Goal = UDim2.new(0.5, 0, 0, Y)
+
+			if Instant or Pill.BackgroundTransparency >= 1 or Library.Config.ReducedMotion then
+				Pill.Position = Goal
+				Pill.BackgroundTransparency = 0.94
+			else
+				Creator.Tween(Pill, 0.25, { Position = Goal })
+			end
+		end
+
+		local function QueuePill()
+			if PopUp.PillPending then
+				return
+			end
+			PopUp.PillPending = true
+			task.defer(function()
+				PopUp.PillPending = false
+				if not PopUp.Destroyed then
+					PopUp:UpdatePill(true)
+				end
+			end)
+		end
+
+		Creator.AddSignal(PopUp.TabScroll:GetPropertyChangedSignal("CanvasPosition"), QueuePill)
+		Creator.AddSignal(PopUp.TabScroll:GetPropertyChangedSignal("AbsoluteSize"), QueuePill)
+		Creator.AddSignal(PopUp.TabList:GetPropertyChangedSignal("AbsoluteSize"), QueuePill)
+
+		function PopUp:GetTab(Key)
+			if type(Key) == "number" then
+				return PopUp.Tabs[Key]
+			end
+			for _, Tab in PopUp.Tabs do
+				if Tab == Key or Tab.Id == Key or Tab.Name == Key then
+					return Tab
+				end
+			end
+			return nil
+		end
+
+		function PopUp:SelectTab(Key)
+			local Target = nil
+			if Key ~= nil then
+				Target = PopUp:GetTab(Key)
+				if not Target then
+					return
+				end
+			end
+
+			if PopUp.Selected == Target then
+				return
+			end
+
+			Library:ClosePopups()
+			PopUp.Selected = Target
+
+			for _, Tab in PopUp.Tabs do
+				Tab.Selected = Tab == Target
+			end
+
+			ShowPage(Target and Target.Container or PopUp.RootPage, true)
+			PopUp:UpdatePill(false)
+			Library:Emit("PopUpTabSelected", PopUp, Target)
+		end
+
+		function PopUp:ShowMain()
+			PopUp:SelectTab(nil)
+		end
+
+		function PopUp:AddTab(TabConfig)
+			if type(TabConfig) == "string" then
+				TabConfig = { Title = TabConfig }
+			end
+			assert(type(TabConfig) == "table" and TabConfig.Title, "PopUp - AddTab missing Title")
+
+			local Index = #PopUp.Tabs + 1
+			local Raw = TabConfig.Raw == true
+			local Scroll = not Raw and TabConfig.Scroll ~= false
+			local Image = Resolve(TabConfig.Icon, "Tab", TabConfig)
+			local Palette = Library.IconPalette
+			local IconColor = TabConfig.IconColor or Palette[(PopUpModule.Count + Index - 1) % #Palette + 1]
+
+			local Tab = {
+				Type = "Tab",
+				Kind = "Root",
+				Name = TabConfig.Title,
+				Id = TabConfig.Id,
+				PopUp = PopUp,
+				Raw = Raw,
+				Selected = false,
+				IconColor = IconColor,
+				ShowTitle = not Raw and TabConfig.ShowTitle ~= false,
+			}
+
+			Tab.Icon = New("ImageLabel", {
+				Image = Image or "",
+				Size = UDim2.fromOffset(14, 14),
+				AnchorPoint = Vector2.new(0.5, 0.5),
+				Position = UDim2.new(0, 21, 0.5, 0),
+				Visible = Image ~= nil,
+			})
+			Creator.TagIcon(Tab.Icon, "Text", IconColor)
+
+			Tab.Label = Label({
+				Text = TabConfig.Title,
+				TextSize = 13,
+				Weight = "Medium",
+				Position = UDim2.fromOffset(Image and 40 or 14, 0),
+				Size = UDim2.new(1, -(Image and 48 or 22), 1, 0),
+				TextTruncate = Enum.TextTruncate.AtEnd,
+			})
+			Creator.TagText(Tab.Label, "Text", IconColor)
+			Creator.Marquee(Tab.Label)
+
+			Tab.Frame = New("TextButton", {
+				Size = UDim2.new(1, 0, 0, 38),
+				BackgroundTransparency = 1,
+				LayoutOrder = TabConfig.Order or Index,
+				Parent = PopUp.TabList,
+			}, {
+				Tab.Icon,
+				Tab.Label,
+			})
+
+			Tab.Container = MakePage(TabConfig.Title, Scroll, Raw, Tab)
+			Tab.Page = Tab.Container
+
+			function Tab:Select()
+				PopUp:SelectTab(Tab)
+			end
+
+			function Tab:SetTitle(Value)
+				Tab.Name = Value
+				Tab.Label.Text = Value
+				Tab.Container.Name = Value
+				if Tab.TitleLabel then
+					Tab.TitleLabel.Text = Value
+				end
+			end
+
+			function Tab:SetIcon(Value)
+				local NewImage = Resolve(Value, "Tab", TabConfig)
+				Creator.SetImage(Tab.Icon, NewImage)
+				Tab.Icon.Visible = NewImage ~= nil
+			end
+
+			function Tab:SetVisible(Value)
+				Tab.Frame.Visible = Value and true or false
+				if not Tab.Frame.Visible and PopUp.Selected == Tab then
+					for _, Other in PopUp.Tabs do
+						if Other ~= Tab and Other.Frame.Visible then
+							PopUp:SelectTab(Other)
+							break
+						end
+					end
+				end
+				QueuePill()
+			end
+
+			function Tab:GetVisible()
+				return Tab.Frame.Visible
+			end
+
+			function Tab:Destroy()
+				if Tab.Destroyed then
+					return
+				end
+				Tab.Destroyed = true
+
+				local Position = table.find(PopUp.Tabs, Tab)
+				if Position then
+					table.remove(PopUp.Tabs, Position)
+				end
+
+				for Row in next, Library.SearchRows do
+					if Row.Tab == Tab then
+						Row:Destroy()
+					end
+				end
+
+				local WasSelected = PopUp.Selected == Tab
+				Tab.Frame:Destroy()
+				Tab.Container:Destroy()
+
+				if WasSelected then
+					PopUp.Selected = nil
+					local Fallback = PopUp.Tabs[math.min(Position or 1, #PopUp.Tabs)]
+					if Fallback then
+						PopUp:SelectTab(Fallback)
+					else
+						ShowPage(PopUp.RootPage, true)
+					end
+				end
+
+				Relayout()
+				QueuePill()
+			end
+
+			BuildHost(Tab, Tab.Container)
+
+			Creator.AddSignal(Tab.Frame.MouseButton1Click, function()
+				PopUp:SelectTab(Tab)
+			end)
+			Creator.AddSignal(Tab.Frame:GetPropertyChangedSignal("AbsoluteSize"), QueuePill)
+
+			table.insert(PopUp.Tabs, Tab)
+			Relayout()
+
+			if TabConfig.Select or (#PopUp.Tabs == 1 and PopUp.Order == 0) then
+				PopUp:SelectTab(Tab)
+			end
+
+			QueuePill()
+			return Tab
+		end
+
+		function PopUp:AddBarButtonAction(ActionConfig)
+			ActionConfig = ActionConfig or {}
+			PopUp.ActionCount += 1
+
+			local Callback = ActionConfig.Callback
+			local Toggled = ActionConfig.Toggle == true
+			local Action = {
+				Type = "BarButtonAction",
+				Value = false,
+			}
+
+			Action.Button = Components.BarButton(Resolve(ActionConfig.Icon, "TitleBar", ActionConfig) or "", function()
+				if Toggled then
+					Action:SetValue(not Action.Value)
+				else
+					Library:SafeCallback(Callback)
+				end
+			end)
+			Action.Frame = Action.Button.Frame
+			Action.Frame.LayoutOrder = -1000 + PopUp.ActionCount
+			Action.Frame.Visible = ActionConfig.Visible ~= false
+			Action.Frame.Parent = PopUp.Controls
+
+			function Action:SetIcon(Value)
+				Creator.SetImage(Action.Button.Icon, Resolve(Value, "TitleBar"))
+			end
+
+			function Action:SetVisible(Value)
+				Action.Frame.Visible = Value and true or false
+			end
+
+			function Action:SetCallback(Func)
+				Callback = Func
+			end
+
+			function Action:SetValue(Value, Silent)
+				Value = Value == true
+				if not Toggled or Action.Value == Value then
+					return
+				end
+				Action.Value = Value
+				Action.Button.SetToggled(Value)
+				if not Silent then
+					Library:SafeCallback(Callback, Value)
+				end
+			end
+
+			function Action:GetValue(): boolean
+				return Action.Value
+			end
+
+			function Action:Toggle()
+				Action:SetValue(not Action.Value)
+			end
+
+			function Action:Destroy()
+				if Action.Destroyed then
+					return
+				end
+				Action.Destroyed = true
+				local Position = table.find(PopUp.Actions, Action)
+				if Position then
+					table.remove(PopUp.Actions, Position)
+				end
+				Action.Frame:Destroy()
+			end
+
+			table.insert(PopUp.Actions, Action)
+
+			if Toggled and ActionConfig.Default == true then
+				Action:SetValue(true, true)
+			end
+
+			return Action
+		end
+
+		function PopUp:AddBarButtonToggle(ActionConfig)
+			local Config = table.clone(ActionConfig or {})
+			Config.Toggle = true
+			return PopUp:AddBarButtonAction(Config)
+		end
+
+		local MinimizeNotified = false
+
+		local function KeyName(Key): string?
+			if typeof(Key) == "EnumItem" then
+				return Key.Name
+			end
+			return if Key ~= nil then tostring(Key) else nil
+		end
+
+		function PopUp:SetMinimized(Value)
+			Value = Value == true
+			if PopUp.Destroyed or PopUp.Minimized == Value then
+				return
+			end
+			PopUp.Minimized = Value
+			PopUp.Root.Visible = PopUp.Opened and not Value and not Library.IntroActive
+			Library:ClosePopups()
+			PopUp:ApplyPaint()
+
+			if Value and not MinimizeNotified then
+				MinimizeNotified = true
+				local Keybind = PopUp.MinimizeKeybind
+				local Key = if type(Keybind) == "table" and Keybind.Type == "Keybind"
+					then Keybind.Value
+					else KeyName(PopUp.MinimizeKey)
+						or (Library.MinimizeKeybind and Library.MinimizeKeybind.Value)
+						or KeyName(Library.MinimizeKey)
+				if Key then
+					Library:Notify({
+						Title = Config.Title,
+						Content = "Press " .. tostring(Key) .. " to toggle this popup.",
+						Duration = 6,
+					})
+				end
+			end
+
+			Library:SafeCallback(Config.OnMinimize, PopUp, Value)
+		end
+
+		function PopUp:Minimize()
+			PopUp:SetMinimized(not PopUp.Minimized)
+		end
+
+		function PopUp:IsMinimized(): boolean
+			return PopUp.Minimized
+		end
+
+		function PopUp:SetMinimizable(Value)
+			PopUp.Minimizable = Value == true
+			PopUp.MinButton.Frame.Visible = PopUp.Minimizable
+		end
+
+		function PopUp:SetMinimizeKey(Key)
+			PopUp.MinimizeKey = Key
+		end
+
+		function PopUp:GetMinimizeKey()
+			return PopUp.MinimizeKey
+		end
+
+		function PopUp:SetMinimizeKeybind(Keybind)
+			PopUp.MinimizeKeybind = Keybind
+		end
+
+		Track(UserInputService.InputBegan, function(Input)
+			if PopUp.Destroyed or not PopUp.Opened or not PopUp.Minimizable or UserInputService:GetFocusedTextBox() then
+				return
+			end
+
+			local Keybind = PopUp.MinimizeKeybind
+			local Key = PopUp.MinimizeKey
+
+			if type(Keybind) == "table" and Keybind.Type == "Keybind" then
+				if Input.KeyCode.Name == Keybind.Value then
+					PopUp:Minimize()
+				end
+				return
+			end
+
+			if Key ~= nil then
+				if Input.KeyCode == Key or Input.KeyCode.Name == Key then
+					PopUp:Minimize()
+				end
+				return
+			end
+
+			local Shared = false
+			if type(Library.MinimizeKeybind) == "table" and Library.MinimizeKeybind.Type == "Keybind" then
+				Shared = Input.KeyCode.Name == Library.MinimizeKeybind.Value
+			else
+				Shared = Input.KeyCode == Library.MinimizeKey
+			end
+
+			if Shared then
+				task.defer(function()
+					if PopUp.Destroyed then
+						return
+					end
+					local Window = Library.Window
+					PopUp:SetMinimized(if Window then Window.Minimized else not PopUp.Minimized)
+				end)
+			end
+		end)
+
+		function PopUp:BringToFront()
+			local Stack = PopUpModule.Stack
+			local Index = table.find(Stack, PopUp)
+			if Index then
+				table.remove(Stack, Index)
+			end
+			table.insert(Stack, PopUp)
+			for Order, Item in Stack do
+				Item.Root.ZIndex = BaseZIndex + math.min(Order, MaxStack)
+			end
+		end
+
+		local function MoveTo(Goal: Vector2, Target: Vector2, Instantly: boolean?)
+			if PopUp.MoveTween then
+				local Previous = PopUp.MoveTween
+				PopUp.MoveTween = nil
+				Previous:Cancel()
+			end
+
+			local SizeGoal = UDim2.fromOffset(Goal.X, Goal.Y)
+			local PositionGoal = UDim2.fromOffset(Target.X, Target.Y)
+
+			if Instantly or Library.Config.ReducedMotion or not PopUp.Root.Visible then
+				PopUp.Root.Size = SizeGoal
+				PopUp.Root.Position = PositionGoal
+				return
+			end
+
+			local Tween = Creator.Tween(PopUp.Root, 0.28, { Size = SizeGoal, Position = PositionGoal }, Enum.EasingStyle.Quint)
+			PopUp.MoveTween = Tween
+			Tween.Completed:Once(function()
+				if PopUp.MoveTween == Tween then
+					PopUp.MoveTween = nil
+				end
+			end)
+		end
+
+		function PopUp:SetMaximized(Value, Instantly)
+			Value = Value == true
+			if Value == PopUp.Maximized then
+				return
+			end
+
+			local GoalSize, GoalPosition
+
+			if Value then
+				if not PopUp.MaximizeSize then
+					return
+				end
+				local Current, Origin = CurrentSize(), CurrentPosition()
+				PopUp.Normal = { Size = Current, Position = Origin }
+				GoalSize = LimitSize(PopUp.MaximizeSize)
+				GoalPosition = InsidePosition(Origin - (GoalSize - Current) / 2, GoalSize)
+			else
+				local Normal = PopUp.Normal
+				PopUp.Normal = nil
+				GoalSize = Normal and Normal.Size or CurrentSize()
+				GoalPosition = InsidePosition(Normal and Normal.Position or CurrentPosition(), GoalSize)
+			end
+
+			PopUp.Maximized = Value
+			PopUp.Grip.Visible = PopUp.ResizeAble and not Value
+			PopUp.MaxButton.Icon.Image = Value and Assets.Restore or Assets.Max
+			MoveTo(GoalSize, GoalPosition, Instantly)
+			Library:SafeCallback(Config.OnMaximize, Value)
+		end
+
+		function PopUp:Maximize(Instantly)
+			PopUp:SetMaximized(true, Instantly)
+		end
+
+		function PopUp:Restore(Instantly)
+			PopUp:SetMaximized(false, Instantly)
+		end
+
+		function PopUp:ToggleMaximize(Instantly)
+			PopUp:SetMaximized(not PopUp.Maximized, Instantly)
+		end
+
+		function PopUp:SetSize(Value, Instantly)
+			local Parsed = ParseSize(Value, nil)
+			if not Parsed then
+				return
+			end
+			if PopUp.Maximized then
+				PopUp:SetMaximized(false, true)
+			end
+			local Goal = LimitSize(Parsed)
+			MoveTo(Goal, LimitPosition(CurrentPosition(), Goal), Instantly)
+		end
+
+		function PopUp:GetSize(): Vector2
+			return CurrentSize()
+		end
+
+		function PopUp:SetMaximizeSize(Value)
+			PopUp.MaximizeSize = ParseSize(Value, PopUp.DefaultMaximizeSize)
+			if PopUp.Maximized then
+				local Goal = LimitSize(PopUp.MaximizeSize)
+				MoveTo(Goal, InsidePosition(CurrentPosition(), Goal), true)
+			else
+				local Goal = LimitSize(CurrentSize())
+				MoveTo(Goal, LimitPosition(CurrentPosition(), Goal), true)
+			end
+		end
+
+		function PopUp:GetMaximizeSize(): Vector2
+			return PopUp.MaximizeSize
+		end
+
+		function PopUp:SetResizeAble(Value)
+			PopUp.ResizeAble = Value == true
+			PopUp.Grip.Visible = PopUp.ResizeAble and not PopUp.Maximized
+		end
+
+		function PopUp:GetResizeAble(): boolean
+			return PopUp.ResizeAble
+		end
+
+		function PopUp:SetDraggable(Value)
+			PopUp.Draggable = Value == true
+		end
+
+		function PopUp:SetClosable(Value)
+			PopUp.CloseButton.Frame.Visible = Value == true
+		end
+
+		function PopUp:SetPosition(Value)
+			local Parsed = ParseSize(Value, nil)
+			if not Parsed then
+				return
+			end
+			MoveTo(CurrentSize(), LimitPosition(Parsed, CurrentSize()), true)
+		end
+
+		function PopUp:Center(Instantly)
+			local Current = CurrentSize()
+			local Area = GetViewport()
+			MoveTo(Current, InsidePosition((Area - Current) / 2, Current), Instantly)
+		end
+
+		function PopUp:SetTitle(Value)
+			PopUp.Name = Value or ""
+			PopUp.TitleLabel.Text = Value or ""
+		end
+
+		function PopUp:SetSubtitle(Value)
+			PopUp.SubTitleLabel.Text = Value or ""
+			PopUp.SubTitleLabel.Visible = (Value or "") ~= ""
+		end
+
+		function PopUp:SetIcon(Icon, Options)
+			Options = Options or {}
+			local Image = Resolve(Icon, "TitleBar", Options)
+			local Logo = PopUp.LogoImage
+			local LogoSize = Options.Size or Config.LogoSize or 22
+			local Tint = Options.Tint
+			if Tint == nil then
+				Tint = type(Icon) == "string" and Library:GetIconData(Icon, nil, nil, "TitleBar") ~= nil
+			end
+			Creator.SetImage(Logo, Image)
+			Logo.Visible = Image ~= nil
+			Logo.Size = UDim2.fromOffset(LogoSize, LogoSize)
+			Logo:FindFirstChildOfClass("UICorner").CornerRadius = UDim.new(0, Options.Corner or Config.LogoCorner or 0)
+			if Tint then
+				Creator.OverrideTag(Logo, { ImageColor3 = "Text" })
+			else
+				Creator.RemoveTag(Logo)
+				Logo.ImageColor3 = Options.Color or Color3.new(1, 1, 1)
+			end
+		end
+
+		function PopUp:ApplyPaint()
+			local Paint = PopUp.Paint
+			local Active = Library.UseAcrylic and Library.Acrylic and true or false
+			local Visibility = PopUp.Opacity * (if Library.Transparency then 0.92 else 1)
+
+			local function Scale(Transparency: number): number
+				return 1 - (1 - Transparency) * Visibility
+			end
+
+			Paint.Base.BackgroundTransparency = if Active then Scale(0.9) else 1
+			Paint.Main.BackgroundTransparency = if Active then Scale(0.45) else 1
+			Paint.Fill.BackgroundTransparency = Scale(if Active then 0.4 else 0)
+			Paint.Grain.Visible = Active
+			Paint.Noise.Visible = Active
+			Paint.Grain.ImageTransparency = 0.98
+			PopUp.RootStroke.Transparency = if Active then 0.5 else 0
+
+			if PopUp.AcrylicBlur then
+				PopUp.AcrylicBlur.SetVisibility(PopUp.Root.Visible)
+			end
+		end
+
+		function PopUp:SetOpacity(Value)
+			PopUp.Opacity = math.clamp(tonumber(Value) or 1, 0.2, 1)
+			PopUp:ApplyPaint()
+		end
+
+		function PopUp:SetCornerRadius(Value)
+			Radius = math.clamp(tonumber(Value) or 13, 0, 24)
+			PopUp.RootCorner.CornerRadius = UDim.new(0, Radius)
+			PopUp.BodyCorner.CornerRadius = UDim.new(0, Radius)
+			PopUp.Paint:SetRadius(Radius)
+			if PopUp.AcrylicBlur then
+				PopUp.AcrylicBlur.SetRadius(Radius)
+			end
+		end
+
+		function PopUp:Open()
+			if PopUp.Destroyed then
+				return
+			end
+			PopUp.Opened = true
+			PopUp.Minimized = false
+			PopUp.Root.Visible = true
+			PopUp:BringToFront()
+			PopUp:ApplyPaint()
+			Relayout()
+			PopUp:UpdatePill(true)
+			Library:SafeCallback(Config.OnOpen, PopUp)
+		end
+
+		function PopUp:Close()
+			if not PopUp.Opened then
+				return
+			end
+			PopUp.Opened = false
+			Library:ClosePopups()
+			PopUp.Root.Visible = false
+			PopUp:ApplyPaint()
+			Library:SafeCallback(Config.OnClose, PopUp)
+		end
+
+		function PopUp:Toggle()
+			if PopUp.Opened then
+				PopUp:Close()
+			else
+				PopUp:Open()
+			end
+		end
+
+		function PopUp:IsOpen(): boolean
+			return PopUp.Opened
+		end
+
+		function PopUp:SetVisible(Value)
+			if Value then
+				PopUp:Open()
+			else
+				PopUp:Close()
+			end
+		end
+
+		function PopUp:GetState()
+			return {
+				IsResizing = PopUp.IsResizing,
+				IsDragging = PopUp.IsDragging,
+				IsMaximized = PopUp.Maximized,
+				IsMinimized = PopUp.Minimized,
+				IsOpen = PopUp.Opened,
+				Size = CurrentSize(),
+				Position = CurrentPosition(),
+				MaximizeSize = PopUp.MaximizeSize,
+			}
+		end
+
+		function PopUp:Dialog(DialogConfig)
+			local Final = table.clone(DialogConfig or {})
+			Final.Host = PopUp
+			return Library.Window:Dialog(Final)
+		end
+
+		function PopUp:PagedDialog(DialogConfig)
+			local Final = table.clone(DialogConfig or {})
+			Final.Host = PopUp
+			return Library.Window:PagedDialog(Final)
+		end
+
+		function PopUp:Modal(DialogConfig)
+			local Final = table.clone(DialogConfig or {})
+			Final.Host = PopUp
+			return Library.Window:Modal(Final)
+		end
+
+		function PopUp:Menu(MenuConfig)
+			local Final = table.clone(MenuConfig or {})
+			Final.Host = PopUp
+			return Library.Window:Menu(Final)
+		end
+
+		function PopUp:Destroy()
+			if PopUp.Destroyed then
+				return
+			end
+			PopUp.Destroyed = true
+			PopUp.Opened = false
+			Library:ClosePopups()
+
+			if PopUp.MoveTween then
+				PopUp.MoveTween:Cancel()
+				PopUp.MoveTween = nil
+			end
+			if PopUp.SwitchTween then
+				PopUp.SwitchTween:Cancel()
+				PopUp.SwitchTween = nil
+			end
+
+			for Row in next, Library.SearchRows do
+				local Owner = Row.Tab
+				if Owner == PopUp or (type(Owner) == "table" and rawget(Owner, "PopUp") == PopUp) then
+					Row:Destroy()
+				end
+			end
+
+			for _, Connection in Connections do
+				pcall(function()
+					Connection:Disconnect()
+				end)
+			end
+			table.clear(Connections)
+
+			local StackIndex = table.find(PopUpModule.Stack, PopUp)
+			if StackIndex then
+				table.remove(PopUpModule.Stack, StackIndex)
+			end
+
+			local ListIndex = table.find(Library.PopUps, PopUp)
+			if ListIndex then
+				table.remove(Library.PopUps, ListIndex)
+			end
+
+			if PopUp.AcrylicBlur then
+				PopUp.AcrylicBlur.Destroy()
+				PopUp.AcrylicBlur = nil
+			end
+
+			Creator.Hooks[PopUp] = nil
+			Library.DialogHosts[PopUp.Root] = nil
+			PopUp.Root:Destroy()
+
+			Library:SafeCallback(Config.OnDestroy, PopUp)
+			Library:Emit("PopUpDestroyed", PopUp)
+		end
+
+		local DragInput, DragStart, DragOrigin
+
+		Creator.AddSignal(PopUp.Header.InputBegan, function(Input)
+			if not PopUp.Draggable or PopUp.Maximized then
+				return
+			end
+			if Input.UserInputType == Enum.UserInputType.MouseButton1 or Input.UserInputType == Enum.UserInputType.Touch then
+				if PopUp.MoveTween then
+					PopUp.MoveTween:Cancel()
+					PopUp.MoveTween = nil
+				end
+				PopUp.IsDragging = true
+				DragStart = Input.Position
+				DragOrigin = CurrentPosition()
+				PopUp:BringToFront()
+
+				Input.Changed:Connect(function()
+					if Input.UserInputState == Enum.UserInputState.End then
+						PopUp.IsDragging = false
+					end
+				end)
+			end
+		end)
+
+		Creator.AddSignal(PopUp.Header.InputChanged, function(Input)
+			if Input.UserInputType == Enum.UserInputType.MouseMovement or Input.UserInputType == Enum.UserInputType.Touch then
+				DragInput = Input
+			end
+		end)
+
+		local ResizeStart, ResizeOrigin
+
+		local function EndResize()
+			if not PopUp.IsResizing then
+				return
+			end
+			PopUp.IsResizing = false
+			SetScrolling(true)
+		end
+
+		Creator.AddSignal(PopUp.Grip.InputBegan, function(Input)
+			if not PopUp.ResizeAble or PopUp.Maximized or PopUp.IsResizing then
+				return
+			end
+			if Input.UserInputType == Enum.UserInputType.MouseButton1 or Input.UserInputType == Enum.UserInputType.Touch then
+				if PopUp.MoveTween then
+					PopUp.MoveTween:Cancel()
+					PopUp.MoveTween = nil
+				end
+				PopUp.IsResizing = true
+				ResizeStart = Vector2.new(Input.Position.X, Input.Position.Y)
+				ResizeOrigin = CurrentSize()
+				SetScrolling(false)
+				PopUp:BringToFront()
+
+				Input.Changed:Connect(function()
+					if Input.UserInputState == Enum.UserInputState.End then
+						EndResize()
+					end
+				end)
+			end
+		end)
+
+		Track(UserInputService.InputChanged, function(Input)
+			if PopUp.IsDragging and Input == DragInput then
+				local Delta = Input.Position - DragStart
+				local Target = LimitPosition(DragOrigin + Vector2.new(Delta.X, Delta.Y), CurrentSize())
+				PopUp.Root.Position = UDim2.fromOffset(Target.X, Target.Y)
+			elseif
+				PopUp.IsResizing
+				and (Input.UserInputType == Enum.UserInputType.MouseMovement or Input.UserInputType == Enum.UserInputType.Touch)
+			then
+				local Delta = Vector2.new(Input.Position.X, Input.Position.Y) - ResizeStart
+				local Goal = LimitSize(ResizeOrigin + Delta)
+				PopUp.Root.Size = UDim2.fromOffset(Goal.X, Goal.Y)
+			end
+		end)
+
+		Track(UserInputService.InputEnded, function(Input)
+			if Input.UserInputType == Enum.UserInputType.MouseButton1 or Input.UserInputType == Enum.UserInputType.Touch then
+				PopUp.IsDragging = false
+				EndResize()
+			end
+		end)
+
+		Track(UserInputService.InputBegan, function(Input)
+			if Input.UserInputType ~= Enum.UserInputType.MouseButton1 and Input.UserInputType ~= Enum.UserInputType.Touch then
+				return
+			end
+			if not PopUp.Root.Visible then
+				return
+			end
+
+			local Point = Input.Position
+			local Stack = PopUpModule.Stack
+			for Index = #Stack, 1, -1 do
+				local Item = Stack[Index]
+				if Item.Root.Visible then
+					local Origin, Extent = Item.Root.AbsolutePosition, Item.Root.AbsoluteSize
+					if
+						Point.X >= Origin.X
+						and Point.X <= Origin.X + Extent.X
+						and Point.Y >= Origin.Y
+						and Point.Y <= Origin.Y + Extent.Y
+					then
+						if Item == PopUp and Index ~= #Stack then
+							PopUp:BringToFront()
+						end
+						return
+					end
+				end
+			end
+		end)
+
+		Creator.AddSignal(Parent:GetPropertyChangedSignal("AbsoluteSize"), function()
+			if PopUp.Destroyed then
+				return
+			end
+			if PopUp.Maximized and PopUp.MaximizeSize then
+				local Goal = LimitSize(PopUp.MaximizeSize)
+				MoveTo(Goal, InsidePosition(CurrentPosition(), Goal), true)
+			else
+				local Goal = LimitSize(CurrentSize())
+				MoveTo(Goal, LimitPosition(CurrentPosition(), Goal), true)
+			end
+		end)
+
+		BuildHost(PopUp, PopUp.RootPage)
+
+		PopUp:SetIcon(Config.Logo or Config.Icon or Config.TitleIcon, {
+			Tint = Config.LogoTint,
+			Size = Config.LogoSize,
+			Corner = Config.LogoCorner,
+		})
+		PopUp:ApplyPaint()
+		Creator.Hooks[PopUp] = function()
+			PopUp:ApplyPaint()
+		end
+
+		if Config.Opacity ~= nil then
+			PopUp:SetOpacity(Config.Opacity)
+		end
+
+		if Config.Visible ~= false then
+			if Library.IntroActive then
+				local Connection
+				Connection = Library.Events.IntroFinished:Connect(function()
+					Connection:Disconnect()
+					if not PopUp.Destroyed then
+						PopUp:Open()
+					end
+				end)
+			else
+				PopUp:Open()
+			end
+		end
+
+		return PopUp
+	end
+end)()
+
+
+Library.PopUps = {}
+
+function Library:CreatePopUp(Config)
+	local PopUp = Components.PopUp(Config)
+	table.insert(Library.PopUps, PopUp)
+	Library:Emit("PopUpCreated", PopUp)
+	return PopUp
+end
+
+
+function Library:GetPopUps()
+	return table.clone(Library.PopUps)
+end
+
+function Library:GetPopUp(Key)
+	for _, PopUp in Library.PopUps do
+		if PopUp == Key or PopUp.Id == Key or PopUp.Name == Key then
+			return PopUp
+		end
+	end
+	return nil
+end
+
+function Library:DestroyPopUp(Key): boolean
+	local PopUp = Library:GetPopUp(Key)
+	if not PopUp then
+		return false
+	end
+	PopUp:Destroy()
+	return true
+end
+
+function Library:DestroyAllPopUps(Except)
+	for _, PopUp in table.clone(Library.PopUps) do
+		if PopUp ~= Except and PopUp.Id ~= Except then
+			PopUp:Destroy()
+		end
+	end
+end
 
 local NotificationModule = Components.Notification
 NotificationModule:Init(GUI)
@@ -14115,7 +15996,7 @@ ElementsTable.Toggle = (function()
 			end
 		end
 
-		Creator.AddSignal(Row.Body.MouseLeave, Release)
+		Creator.OnHoverLeave(Row.Body, Release)
 		Creator.AddSignal(Row.Body.MouseButton1Up, Release)
 
 		Creator.AddSignal(Row.Body.MouseButton1Click, function()
@@ -16405,7 +18286,10 @@ ElementsTable.Colorpicker = (function()
 		end
 
 		local function OpenChromium()
-			local Dialog = Components.Dialog:Create(DialogOptions)
+			local Dialog = Components.Dialog:Create({ Tags = DialogOptions.Tags, Anchor = Swatch })
+			if Dialog.Ghost then
+				return
+			end
 			local Session = MakeSession()
 			Dialog.Title.Text = Colorpicker.Title
 
@@ -16450,7 +18334,10 @@ ElementsTable.Colorpicker = (function()
 		end
 
 		local function OpenFluent()
-			local Dialog = Components.Dialog:Create(DialogOptions)
+			local Dialog = Components.Dialog:Create({ Tags = DialogOptions.Tags, Anchor = Swatch })
+			if Dialog.Ghost then
+				return
+			end
 			local Session = MakeSession()
 			Session.Live = false
 			Dialog.Title.Text = Colorpicker.Title
@@ -16527,7 +18414,10 @@ ElementsTable.Colorpicker = (function()
 		end
 
 		local function OpenWheel()
-			local Dialog = Components.Dialog:Create(DialogOptions)
+			local Dialog = Components.Dialog:Create({ Tags = DialogOptions.Tags, Anchor = Swatch })
+			if Dialog.Ghost then
+				return
+			end
 			local Session = MakeSession()
 			local Width = 340
 			local InnerW = Width - 40
@@ -17300,13 +19190,13 @@ ElementsTable.CardPicker = (function()
 				end)
 			end
 
-			Creator.AddSignal(Card.MouseEnter, function()
+			Creator.OnHoverEnter(Card, function()
 				Creator.Tween(Preview, 0.15, { Position = UDim2.fromOffset(0, 0) })
 				if Entry.Delete then
 					Entry.Delete.Visible = true
 				end
 			end)
-			Creator.AddSignal(Card.MouseLeave, function()
+			Creator.OnHoverLeave(Card, function()
 				Creator.Tween(Preview, 0.15, { Position = UDim2.fromOffset(0, 2) })
 				if Entry.Delete then
 					Entry.Delete.Visible = false
