@@ -1,12 +1,14 @@
 --!optimize 2
 --!native
-local CloneRef = cloneref or clonereference or function(Object: any): any
+-- This Thing is Readable Version. The version you are using is the Minify version of the code with dark lua to change the file size to the smallest possible size without damaging the code
+-- Code write By StyearX And Other niggas friends 🫩
+local fuck = cloneref or clonereference or function(Object: any): any
 	return Object
 end
 
 local function GetService(Name: string): any
 	local Service = game:GetService(Name)
-	local Success, Result = pcall(CloneRef, Service)
+	local Success, Result = pcall(fuck, Service)
 	return if Success then Result else Service
 end
 
@@ -24,8 +26,13 @@ local Workspace: Workspace = GetService("Workspace")
 local LocalPlayer = Players.LocalPlayer
 local Camera = Workspace.CurrentCamera
 local Mouse = LocalPlayer:GetMouse()
+local RenderStepped = RunService.RenderStepped
+local PreRender = RunService.PreRender
+local Heartbeat = RunService.Heartbeat
 local ProtectGui = protectgui or (syn and syn.protect_gui) or function() end
 
+-- Theme important variables 
+-- Never Delete This Shit this is important code, you are stupid human if you delete this
 local Themes = {
 	Names = {
 		"Dark",
@@ -1865,7 +1872,7 @@ do
 		end
 
 		if not Driver then
-			Driver = RunService.RenderStepped:Connect(Tick)
+			Driver = RenderStepped:Connect(Tick)
 		end
 	end
 
@@ -2766,6 +2773,1963 @@ type SetValue = (value: number, ignore: boolean?) -> ()
 
 local InstantGoal: any = nil
 
+-- Ui blur write by styear
+local UiBlur = (function()
+	local AssetService = game:GetService("AssetService")
+	local RunService = game:GetService("RunService")
+	local TweenService = game:GetService("TweenService")
+
+	type Props = {
+		Blur: number,
+		Brightness: number,
+		Contrast: number,
+		Grayscale: number,
+		HueRotate: number,
+		Invert: number,
+		Opacity: number,
+		Saturate: number,
+		Sepia: number,
+		Tint: Color3,
+		TintTransparency: number,
+		Noise: number,
+	}
+
+	type Matrix = { number }
+	type Tick = () -> boolean
+	type Channel = { number }
+
+	type Work = {
+		Width: number,
+		Height: number,
+		Red: Channel,
+		Green: Channel,
+		Blue: Channel,
+		Alpha: Channel?,
+	}
+
+	type Cover = {
+		Width: number,
+		Height: number,
+	}
+
+	local UiBlur = {}
+
+	UiBlur.Settings = {
+		SliceBudget = 0.005,
+		RasterSize = 288,
+		RasterBudget = 0.02,
+		FirstSliceBudget = 0.02,
+		MaxPixels = 100000,
+		SigmaTarget = 1.5,
+		PreviewWindow = 0.2,
+		PreviewFactor = 1,
+		MaxCachedFactors = 6,
+		NoiseTileSize = 256,
+		NoiseAssetId = 93229664903102 :: number?,
+	}
+
+	local Defaults: Props = {
+		Blur = 0,
+		Brightness = 1,
+		Contrast = 1,
+		Grayscale = 0,
+		HueRotate = 0,
+		Invert = 0,
+		Opacity = 1,
+		Saturate = 1,
+		Sepia = 0,
+		Tint = Color3.new(1, 1, 1),
+		TintTransparency = 1,
+		Noise = 0,
+	}
+
+	local Ranges: { [string]: { number } } = {
+		Blur = { 0, 200 },
+		Brightness = { 0, 10 },
+		Contrast = { 0, 10 },
+		Grayscale = { 0, 1 },
+		HueRotate = { -3600, 3600 },
+		Invert = { 0, 1 },
+		Opacity = { 0, 1 },
+		Saturate = { 0, 10 },
+		Sepia = { 0, 1 },
+		TintTransparency = { 0, 1 },
+		Noise = { 0, 1 },
+	}
+
+	local PixelProps: { [string]: boolean } = {
+		Blur = true,
+		Brightness = true,
+		Contrast = true,
+		Grayscale = true,
+		HueRotate = true,
+		Invert = true,
+		Saturate = true,
+		Sepia = true,
+	}
+
+	local SpecialProps: { [string]: boolean } = {
+		Backdrop = true,
+		Enabled = true,
+		Parent = true,
+	}
+
+	local function Compose(After: Matrix, Before: Matrix): Matrix
+		local Result = table.create(12)
+		for Row = 0, 2 do
+			local Offset = Row * 4
+			local A1, A2, A3, A4 = After[Offset + 1], After[Offset + 2], After[Offset + 3], After[Offset + 4]
+			for Column = 1, 4 do
+				local Value = A1 * Before[Column] + A2 * Before[4 + Column] + A3 * Before[8 + Column]
+				if Column == 4 then
+					Value += A4
+				end
+				Result[Offset + Column] = Value
+			end
+		end
+		return Result
+	end
+
+	local function BuildMatrix(Values: Props): (Matrix, boolean)
+		local Result: Matrix = { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0 }
+		local IsIdentity = true
+
+		if Values.Brightness ~= 1 then
+			local Amount = Values.Brightness
+			Result = Compose({ Amount, 0, 0, 0, 0, Amount, 0, 0, 0, 0, Amount, 0 }, Result)
+			IsIdentity = false
+		end
+
+		if Values.Contrast ~= 1 then
+			local Amount = Values.Contrast
+			local Offset = 0.5 - 0.5 * Amount
+			Result = Compose({ Amount, 0, 0, Offset, 0, Amount, 0, Offset, 0, 0, Amount, Offset }, Result)
+			IsIdentity = false
+		end
+
+		if Values.Grayscale ~= 0 then
+			local Keep = 1 - math.clamp(Values.Grayscale, 0, 1)
+			Result = Compose({
+				0.2126 + 0.7874 * Keep, 0.7152 - 0.7152 * Keep, 0.0722 - 0.0722 * Keep, 0,
+				0.2126 - 0.2126 * Keep, 0.7152 + 0.2848 * Keep, 0.0722 - 0.0722 * Keep, 0,
+				0.2126 - 0.2126 * Keep, 0.7152 - 0.7152 * Keep, 0.0722 + 0.9278 * Keep, 0,
+			}, Result)
+			IsIdentity = false
+		end
+
+		if Values.HueRotate ~= 0 then
+			local Angle = math.rad(Values.HueRotate)
+			local Cos, Sin = math.cos(Angle), math.sin(Angle)
+			Result = Compose({
+				0.213 + Cos * 0.787 - Sin * 0.213, 0.715 - Cos * 0.715 - Sin * 0.715, 0.072 - Cos * 0.072 + Sin * 0.928, 0,
+				0.213 - Cos * 0.213 + Sin * 0.143, 0.715 + Cos * 0.285 + Sin * 0.140, 0.072 - Cos * 0.072 - Sin * 0.283, 0,
+				0.213 - Cos * 0.213 - Sin * 0.787, 0.715 - Cos * 0.715 + Sin * 0.715, 0.072 + Cos * 0.928 + Sin * 0.072, 0,
+			}, Result)
+			IsIdentity = false
+		end
+
+		if Values.Invert ~= 0 then
+			local Amount = math.clamp(Values.Invert, 0, 1)
+			local Scale = 1 - 2 * Amount
+			Result = Compose({ Scale, 0, 0, Amount, 0, Scale, 0, Amount, 0, 0, Scale, Amount }, Result)
+			IsIdentity = false
+		end
+
+		if Values.Saturate ~= 1 then
+			local Amount = math.max(Values.Saturate, 0)
+			Result = Compose({
+				0.213 + 0.787 * Amount, 0.715 - 0.715 * Amount, 0.072 - 0.072 * Amount, 0,
+				0.213 - 0.213 * Amount, 0.715 + 0.285 * Amount, 0.072 - 0.072 * Amount, 0,
+				0.213 - 0.213 * Amount, 0.715 - 0.715 * Amount, 0.072 + 0.928 * Amount, 0,
+			}, Result)
+			IsIdentity = false
+		end
+
+		if Values.Sepia ~= 0 then
+			local Keep = 1 - math.clamp(Values.Sepia, 0, 1)
+			Result = Compose({
+				0.393 + 0.607 * Keep, 0.769 - 0.769 * Keep, 0.189 - 0.189 * Keep, 0,
+				0.349 - 0.349 * Keep, 0.686 + 0.314 * Keep, 0.168 - 0.168 * Keep, 0,
+				0.272 - 0.272 * Keep, 0.534 - 0.534 * Keep, 0.131 + 0.869 * Keep, 0,
+			}, Result)
+			IsIdentity = false
+		end
+
+		return Result, IsIdentity
+	end
+
+	local function BoxesForGauss(Sigma: number, Passes: number): { number }
+		local IdealWidth = math.sqrt((12 * Sigma * Sigma / Passes) + 1)
+		local Lower = math.floor(IdealWidth)
+		if Lower % 2 == 0 then
+			Lower -= 1
+		end
+		local Upper = Lower + 2
+		local IdealCount = (12 * Sigma * Sigma - Passes * Lower * Lower - 4 * Passes * Lower - 3 * Passes) / (-4 * Lower - 4)
+		local Count = math.floor(IdealCount + 0.5)
+		local Sizes = table.create(Passes)
+		for Index = 1, Passes do
+			Sizes[Index] = if Index <= Count then Lower else Upper
+		end
+		return Sizes
+	end
+
+	local function BoxBlurHorizontal(
+		SourceR: Channel,
+		SourceG: Channel,
+		SourceB: Channel,
+		TargetR: Channel,
+		TargetG: Channel,
+		TargetB: Channel,
+		Width: number,
+		Height: number,
+		Radius: number,
+		CheckTick: Tick
+	): boolean
+		local Inverse = 1 / (Radius + Radius + 1)
+		local Last = Width - 1
+		for Y = 0, Height - 1 do
+			if Y % 8 == 0 and not CheckTick() then
+				return false
+			end
+			local Row = Y * Width + 1
+			local SumR, SumG, SumB = 0, 0, 0
+			for Offset = -Radius, Radius do
+				local Index = Row + math.clamp(Offset, 0, Last)
+				SumR += SourceR[Index]
+				SumG += SourceG[Index]
+				SumB += SourceB[Index]
+			end
+			for X = 0, Last do
+				local Index = Row + X
+				TargetR[Index] = SumR * Inverse
+				TargetG[Index] = SumG * Inverse
+				TargetB[Index] = SumB * Inverse
+				local AddIndex = Row + math.min(X + Radius + 1, Last)
+				local SubIndex = Row + math.max(X - Radius, 0)
+				SumR += SourceR[AddIndex] - SourceR[SubIndex]
+				SumG += SourceG[AddIndex] - SourceG[SubIndex]
+				SumB += SourceB[AddIndex] - SourceB[SubIndex]
+			end
+		end
+		return true
+	end
+
+	local function BoxBlurVertical(
+		SourceR: Channel,
+		SourceG: Channel,
+		SourceB: Channel,
+		TargetR: Channel,
+		TargetG: Channel,
+		TargetB: Channel,
+		Width: number,
+		Height: number,
+		Radius: number,
+		CheckTick: Tick
+	): boolean
+		local Inverse = 1 / (Radius + Radius + 1)
+		local Last = Height - 1
+		local SumsR, SumsG, SumsB = table.create(Width, 0), table.create(Width, 0), table.create(Width, 0)
+		for Offset = -Radius, Radius do
+			local RowStart = math.clamp(Offset, 0, Last) * Width
+			for Column = 1, Width do
+				local Index = RowStart + Column
+				SumsR[Column] += SourceR[Index]
+				SumsG[Column] += SourceG[Index]
+				SumsB[Column] += SourceB[Index]
+			end
+		end
+		for Y = 0, Last do
+			if Y % 8 == 0 and not CheckTick() then
+				return false
+			end
+			local RowStart = Y * Width
+			local AddStart = math.min(Y + Radius + 1, Last) * Width
+			local SubStart = math.max(Y - Radius, 0) * Width
+			for Column = 1, Width do
+				local SumR, SumG, SumB = SumsR[Column], SumsG[Column], SumsB[Column]
+				local Index = RowStart + Column
+				TargetR[Index] = SumR * Inverse
+				TargetG[Index] = SumG * Inverse
+				TargetB[Index] = SumB * Inverse
+				local AddIndex = AddStart + Column
+				local SubIndex = SubStart + Column
+				SumsR[Column] = SumR + (SourceR[AddIndex] - SourceR[SubIndex])
+				SumsG[Column] = SumG + (SourceG[AddIndex] - SourceG[SubIndex])
+				SumsB[Column] = SumB + (SourceB[AddIndex] - SourceB[SubIndex])
+			end
+		end
+		return true
+	end
+
+	local function GaussianBlur(
+		Red: Channel,
+		Green: Channel,
+		Blue: Channel,
+		Width: number,
+		Height: number,
+		Sigma: number,
+		CheckTick: Tick
+	): boolean
+		local Total = Width * Height
+		local ScratchR, ScratchG, ScratchB = table.create(Total, 0), table.create(Total, 0), table.create(Total, 0)
+		for _, Size in BoxesForGauss(Sigma, 3) do
+			local Radius = (Size - 1) // 2
+			if Radius >= 1 then
+				if not BoxBlurHorizontal(Red, Green, Blue, ScratchR, ScratchG, ScratchB, Width, Height, Radius, CheckTick) then
+					return false
+				end
+				if not BoxBlurVertical(ScratchR, ScratchG, ScratchB, Red, Green, Blue, Width, Height, Radius, CheckTick) then
+					return false
+				end
+			end
+		end
+		return true
+	end
+
+	local function BlurChannel(Channel: Channel, Width: number, Height: number, Sigma: number, CheckTick: Tick): boolean
+		local Scratch = table.create(Width * Height, 0)
+		local LastX, LastY = Width - 1, Height - 1
+		for _, Size in BoxesForGauss(Sigma, 3) do
+			local Radius = (Size - 1) // 2
+			if Radius >= 1 then
+				local Inverse = 1 / (Radius + Radius + 1)
+				for Y = 0, LastY do
+					if Y % 8 == 0 and not CheckTick() then
+						return false
+					end
+					local Row = Y * Width + 1
+					local Sum = 0
+					for Offset = -Radius, Radius do
+						Sum += Channel[Row + math.clamp(Offset, 0, LastX)]
+					end
+					for X = 0, LastX do
+						Scratch[Row + X] = Sum * Inverse
+						Sum += Channel[Row + math.min(X + Radius + 1, LastX)] - Channel[Row + math.max(X - Radius, 0)]
+					end
+				end
+				local Sums = table.create(Width, 0)
+				for Offset = -Radius, Radius do
+					local RowStart = math.clamp(Offset, 0, LastY) * Width
+					for Column = 1, Width do
+						Sums[Column] += Scratch[RowStart + Column]
+					end
+				end
+				for Y = 0, LastY do
+					if Y % 8 == 0 and not CheckTick() then
+						return false
+					end
+					local RowStart = Y * Width
+					local AddStart = math.min(Y + Radius + 1, LastY) * Width
+					local SubStart = math.max(Y - Radius, 0) * Width
+					for Column = 1, Width do
+						local Sum = Sums[Column]
+						Channel[RowStart + Column] = Sum * Inverse
+						Sums[Column] = Sum + (Scratch[AddStart + Column] - Scratch[SubStart + Column])
+					end
+				end
+			end
+		end
+		return true
+	end
+
+	local MarkDirty: (any) -> ()
+
+	local Backdrop = {}
+	Backdrop.__index = Backdrop
+
+	function Backdrop.new(Area: GuiObject, Image: EditableImage): any
+		return setmetatable({
+			Area = Area,
+			Image = Image,
+			SourceWidth = Image.Size.X,
+			SourceHeight = Image.Size.Y,
+			Elements = {},
+			OwnsImage = false,
+			Pixels = nil :: buffer?,
+			HasAlpha = false,
+			WorkCache = {} :: { [number]: Work },
+			CacheCount = 0,
+			Generation = 0,
+		}, Backdrop)
+	end
+
+	function Backdrop.FromPixels(Area: GuiObject, Pixels: buffer, Width: number, Height: number): any
+		return setmetatable({
+			Area = Area,
+			Image = nil,
+			SourceWidth = Width,
+			SourceHeight = Height,
+			Elements = {},
+			OwnsImage = false,
+			Static = true,
+			Pixels = Pixels,
+			HasAlpha = true,
+			WorkCache = {} :: { [number]: Work },
+			CacheCount = 0,
+			Generation = 0,
+		}, Backdrop)
+	end
+
+	function Backdrop.FromImageLabel(Label: ImageLabel | ImageButton): any
+		assert(
+			typeof(Label) == "Instance" and (Label:IsA("ImageLabel") or Label:IsA("ImageButton")),
+			"Backdrop must be an ImageLabel or ImageButton"
+		)
+		local ImageSource = Label.ImageContent
+		local Image: EditableImage
+		local OwnsImage = false
+		if ImageSource.SourceType == Enum.ContentSourceType.Object and ImageSource.Object then
+			Image = ImageSource.Object :: EditableImage
+		else
+			if ImageSource.SourceType == Enum.ContentSourceType.None and Label.Image ~= "" then
+				ImageSource = Content.fromUri(Label.Image)
+			end
+			Image = AssetService:CreateEditableImageAsync(ImageSource)
+			OwnsImage = true
+		end
+		local Result = Backdrop.new(Label, Image)
+		Result.OwnsImage = OwnsImage
+		return Result
+	end
+
+	function Backdrop.GetWork(Self: any, Factor: number, CheckTick: Tick): Work?
+		local Cached = Self.WorkCache[Factor]
+		if Cached then
+			return Cached
+		end
+
+		local Generation = Self.Generation
+		local HasAlpha: boolean = Self.HasAlpha
+		local Width, Height = Self.SourceWidth, Self.SourceHeight
+		if not Self.Pixels then
+			Self.Pixels = Self.Image:ReadPixelsBuffer(Vector2.zero, Vector2.new(Width, Height))
+		end
+		local Pixels: buffer = Self.Pixels
+
+		local WorkWidth, WorkHeight = math.max(1, math.ceil(Width / Factor)), math.max(1, math.ceil(Height / Factor))
+		local Total = WorkWidth * WorkHeight
+		local Red, Green, Blue = table.create(Total, 0), table.create(Total, 0), table.create(Total, 0)
+		local Alpha: Channel? = if HasAlpha then table.create(Total, 0) else nil
+		local Normalize = 1 / 255
+		local NormalizeSquared = Normalize * Normalize
+
+		if Factor == 1 and Alpha then
+			for Index = 0, Total - 1 do
+				if Index % 4096 == 0 and not CheckTick() then
+					return nil
+				end
+				local Offset = Index * 4
+				local Opacity = buffer.readu8(Pixels, Offset + 3) * Normalize
+				Alpha[Index + 1] = Opacity
+				Red[Index + 1] = buffer.readu8(Pixels, Offset) * Normalize * Opacity
+				Green[Index + 1] = buffer.readu8(Pixels, Offset + 1) * Normalize * Opacity
+				Blue[Index + 1] = buffer.readu8(Pixels, Offset + 2) * Normalize * Opacity
+			end
+		elseif Factor == 1 then
+			for Index = 0, Total - 1 do
+				if Index % 4096 == 0 and not CheckTick() then
+					return nil
+				end
+				local Offset = Index * 4
+				Red[Index + 1] = buffer.readu8(Pixels, Offset) * Normalize
+				Green[Index + 1] = buffer.readu8(Pixels, Offset + 1) * Normalize
+				Blue[Index + 1] = buffer.readu8(Pixels, Offset + 2) * Normalize
+			end
+		else
+			local Step = math.max(1, Factor // 4)
+			for WorkY = 0, WorkHeight - 1 do
+				if not CheckTick() then
+					return nil
+				end
+				local StartY = WorkY * Factor
+				local StopY = math.min(Height, StartY + Factor)
+				for WorkX = 0, WorkWidth - 1 do
+					local StartX = WorkX * Factor
+					local StopX = math.min(Width, StartX + Factor)
+					local SumR, SumG, SumB, SumA, Count = 0, 0, 0, 0, 0
+					for SampleY = StartY, StopY - 1, Step do
+						local RowOffset = SampleY * Width
+						for SampleX = StartX, StopX - 1, Step do
+							local Offset = (RowOffset + SampleX) * 4
+							if Alpha then
+								local Opacity = buffer.readu8(Pixels, Offset + 3)
+								SumR += buffer.readu8(Pixels, Offset) * Opacity
+								SumG += buffer.readu8(Pixels, Offset + 1) * Opacity
+								SumB += buffer.readu8(Pixels, Offset + 2) * Opacity
+								SumA += Opacity
+							else
+								SumR += buffer.readu8(Pixels, Offset)
+								SumG += buffer.readu8(Pixels, Offset + 1)
+								SumB += buffer.readu8(Pixels, Offset + 2)
+							end
+							Count += 1
+						end
+					end
+					local Index = WorkY * WorkWidth + WorkX + 1
+					if Alpha then
+						local Scale = NormalizeSquared / Count
+						Red[Index], Green[Index], Blue[Index] = SumR * Scale, SumG * Scale, SumB * Scale
+						Alpha[Index] = SumA * Normalize / Count
+					else
+						local Scale = Normalize / Count
+						Red[Index], Green[Index], Blue[Index] = SumR * Scale, SumG * Scale, SumB * Scale
+					end
+				end
+			end
+		end
+
+		local Result: Work = {
+			Width = WorkWidth,
+			Height = WorkHeight,
+			Red = Red,
+			Green = Green,
+			Blue = Blue,
+			Alpha = Alpha,
+		}
+
+		if Generation == Self.Generation then
+			if Self.CacheCount >= UiBlur.Settings.MaxCachedFactors then
+				table.clear(Self.WorkCache)
+				Self.CacheCount = 0
+			end
+			Self.WorkCache[Factor] = Result
+			Self.CacheCount += 1
+		end
+
+		return Result
+	end
+
+	function Backdrop.Invalidate(Self: any)
+		if not Self.Static then
+			Self.SourceWidth, Self.SourceHeight = Self.Image.Size.X, Self.Image.Size.Y
+			Self.Pixels = nil
+		end
+		Self.Generation += 1
+		Self.CacheCount = 0
+		table.clear(Self.WorkCache)
+		for Element in Self.Elements do
+			MarkDirty(Element)
+		end
+	end
+
+	function Backdrop.Destroy(Self: any)
+		for Element in table.clone(Self.Elements) do
+			local State = Element.State
+			State.Source = nil
+			State.Cover = nil
+			State.Version += 1
+			State.Image.Visible = false
+		end
+		table.clear(Self.Elements)
+		table.clear(Self.WorkCache)
+		Self.Pixels = nil
+		if Self.OwnsImage and Self.Image then
+			Self.Image:Destroy()
+		end
+	end
+
+	UiBlur.Backdrop = Backdrop
+
+	local function EvalColor(Sequence: ColorSequence, Time: number): Color3
+		local Keypoints = Sequence.Keypoints
+		for Index = 1, #Keypoints - 1 do
+			local First, Second = Keypoints[Index], Keypoints[Index + 1]
+			if Time <= Second.Time then
+				local Span = Second.Time - First.Time
+				local Fraction = if Span > 0 then (Time - First.Time) / Span else 0
+				return First.Value:Lerp(Second.Value, math.clamp(Fraction, 0, 1))
+			end
+		end
+		return Keypoints[#Keypoints].Value
+	end
+
+	local function EvalNumber(Sequence: NumberSequence, Time: number): number
+		local Keypoints = Sequence.Keypoints
+		for Index = 1, #Keypoints - 1 do
+			local First, Second = Keypoints[Index], Keypoints[Index + 1]
+			if Time <= Second.Time then
+				local Span = Second.Time - First.Time
+				local Fraction = if Span > 0 then (Time - First.Time) / Span else 0
+				return First.Value + (Second.Value - First.Value) * math.clamp(Fraction, 0, 1)
+			end
+		end
+		return Keypoints[#Keypoints].Value
+	end
+
+	local ImageCache: { [string]: { Pixels: buffer, Width: number, Height: number } } = {}
+	local ImageCacheKeys: { string } = {}
+	local ImageFailed: { [string]: number } = {}
+	local ImageReadSide = 512
+	local RetryAfter = 8
+	local ImageCacheLimit = 3
+	local ImageMaxPixels = 4194304
+	local MinImageSide = 48
+
+	local function HasVisiblePixels(Pixels: buffer, Width: number, Height: number): boolean
+		local Total = Width * Height
+		local Step = math.max(1, Total // 1024)
+		for Index = 0, Total - 1, Step do
+			if buffer.readu32(Pixels, Index * 4) // 16777216 > 0 then
+				return true
+			end
+		end
+		return false
+	end
+
+	local function RememberImage(Key: string, Pixels: buffer, Width: number, Height: number)
+		if #ImageCacheKeys >= ImageCacheLimit then
+			local Oldest = table.remove(ImageCacheKeys, 1)
+			if Oldest then
+				ImageCache[Oldest] = nil
+			end
+		end
+		table.insert(ImageCacheKeys, Key)
+		ImageCache[Key] = { Pixels = Pixels, Width = Width, Height = Height }
+	end
+
+	local function ReadImagePixels(Label: ImageLabel | ImageButton): (buffer?, number, number)
+		local Success, Pixels, Width, Height = pcall(function()
+			local Source = Label.ImageContent
+			if Source.SourceType == Enum.ContentSourceType.Object and Source.Object then
+				local Live = Source.Object :: EditableImage
+				local Size = Live.Size
+				if Size.X < 1 or Size.Y < 1 or Size.X * Size.Y > ImageMaxPixels then
+					return nil, 0, 0
+				end
+				return Live:ReadPixelsBuffer(Vector2.zero, Size), Size.X, Size.Y
+			end
+
+			local Key = Label.Image
+			if Key == "" or (ImageFailed[Key] and os.clock() - ImageFailed[Key] < RetryAfter) then
+				return nil, 0, 0
+			end
+			local Cached = ImageCache[Key]
+			if Cached then
+				return Cached.Pixels, Cached.Width, Cached.Height
+			end
+
+			local Loaded = AssetService:CreateEditableImageAsync(Content.fromUri(Key))
+			local Size = Loaded.Size
+			if Size.X < 1 or Size.Y < 1 then
+				Loaded:Destroy()
+				ImageFailed[Key] = os.clock()
+				return nil, 0, 0
+			end
+			local Longest = math.max(Size.X, Size.Y)
+			if Longest > ImageReadSide then
+				local Ratio = ImageReadSide / Longest
+				pcall(function()
+					Loaded:Resize(Vector2.new(math.max(1, math.floor(Size.X * Ratio)), math.max(1, math.floor(Size.Y * Ratio))))
+				end)
+				Size = Loaded.Size
+			end
+			if Size.X * Size.Y > ImageMaxPixels then
+				Loaded:Destroy()
+				ImageFailed[Key] = os.clock()
+				return nil, 0, 0
+			end
+			local Buffer = Loaded:ReadPixelsBuffer(Vector2.zero, Size)
+			Loaded:Destroy()
+			if not HasVisiblePixels(Buffer, Size.X, Size.Y) then
+				ImageFailed[Key] = os.clock()
+				return nil, 0, 0
+			end
+			RememberImage(Key, Buffer, Size.X, Size.Y)
+			return Buffer, Size.X, Size.Y
+		end)
+
+		if Success and Pixels then
+			return Pixels, Width, Height
+		end
+		if not Success and Label.Image ~= "" then
+			ImageFailed[Label.Image] = os.clock()
+		end
+		return nil, 0, 0
+	end
+
+	local function FindGradient(Object: Instance): UIGradient?
+		for _, Child in Object:GetChildren() do
+			if Child:IsA("UIGradient") and Child.Enabled then
+				return Child
+			end
+		end
+		return nil
+	end
+
+	local GradientSteps = 64
+	local PictureCoverage = 0.6
+
+	function UiBlur.Rasterize(Area: GuiObject, Config: { [string]: any }?): any
+		local Settings = Config or {}
+		local Exclude: { [Instance]: boolean } = Settings.Exclude or {}
+		local Walk: Instance = Settings.Walk or Area
+		local MaxShapes: number = Settings.MaxShapes or 4000
+		local AreaPosition, AreaSize = Area.AbsolutePosition, Area.AbsoluteSize
+		if AreaSize.X < 1 or AreaSize.Y < 1 then
+			return nil
+		end
+
+		local Scale = math.min(1, (Settings.MaxSize or UiBlur.Settings.RasterSize) / math.max(AreaSize.X, AreaSize.Y))
+		local Width = math.max(1, math.ceil(AreaSize.X * Scale))
+		local Height = math.max(1, math.ceil(AreaSize.Y * Scale))
+		local Total = Width * Height
+		local InverseScale = 1 / Scale
+
+		local Budget = UiBlur.Settings.RasterBudget
+		local SliceStart = os.clock()
+		local function Pace()
+			if os.clock() - SliceStart > Budget then
+				task.wait()
+				SliceStart = os.clock()
+			end
+		end
+
+		local Success, Result = pcall(function()
+			local Red, Green, Blue, Alpha = table.create(Total, 0), table.create(Total, 0), table.create(Total, 0), table.create(Total, 0)
+			local Count = 0
+			local Recorded: { any } = {}
+			local Underlay: { any }? = nil
+
+			local function PixelBounds(Left: number, Top: number, Right: number, Bottom: number, Clip: { number })
+				Left, Top = math.max(Left, Clip[1]), math.max(Top, Clip[2])
+				Right, Bottom = math.min(Right, Clip[3]), math.min(Bottom, Clip[4])
+				return math.max(math.floor(Left * Scale), 0),
+					math.max(math.floor(Top * Scale), 0),
+					math.min(math.ceil(Right * Scale), Width),
+					math.min(math.ceil(Bottom * Scale), Height)
+			end
+
+			local function Fill(
+				Left: number,
+				Top: number,
+				Right: number,
+				Bottom: number,
+				Clip: { number },
+				Color: Color3,
+				Strength: number
+			)
+				if Strength <= 0.01 then
+					return
+				end
+				local PxLeft, PxTop, PxRight, PxBottom = PixelBounds(Left, Top, Right, Bottom, Clip)
+				if PxRight <= PxLeft or PxBottom <= PxTop then
+					return
+				end
+				Strength = math.min(Strength, 1)
+				if not Underlay and #Recorded < 96 then
+					table.insert(Recorded, {
+						Left = Left,
+						Top = Top,
+						Right = Right,
+						Bottom = Bottom,
+						Clip = { Clip[1], Clip[2], Clip[3], Clip[4] },
+						Color = Color,
+						Strength = Strength,
+					})
+				end
+				local Keep = 1 - Strength
+				local SourceR, SourceG, SourceB = Color.R * Strength, Color.G * Strength, Color.B * Strength
+				for Y = PxTop, PxBottom - 1 do
+					Pace()
+					local Row = Y * Width + 1
+					for Index = Row + PxLeft, Row + PxRight - 1 do
+						Red[Index] = SourceR + Red[Index] * Keep
+						Green[Index] = SourceG + Green[Index] * Keep
+						Blue[Index] = SourceB + Blue[Index] * Keep
+						Alpha[Index] = Strength + Alpha[Index] * Keep
+					end
+				end
+				Count += 1
+			end
+
+			local function FillGradient(
+				Left: number,
+				Top: number,
+				Right: number,
+				Bottom: number,
+				Clip: { number },
+				Base: Color3,
+				Strength: number,
+				Gradient: UIGradient
+			)
+				local PxLeft, PxTop, PxRight, PxBottom = PixelBounds(Left, Top, Right, Bottom, Clip)
+				if PxRight <= PxLeft or PxBottom <= PxTop then
+					return
+				end
+
+				if not Underlay and #Recorded < 96 then
+					table.insert(Recorded, {
+						Left = Left,
+						Top = Top,
+						Right = Right,
+						Bottom = Bottom,
+						Clip = { Clip[1], Clip[2], Clip[3], Clip[4] },
+						Color = Base,
+						Strength = Strength,
+						Gradient = Gradient:Clone(),
+					})
+				end
+
+				local Angle = math.rad(Gradient.Rotation)
+				local Cos, Sin = math.cos(Angle), math.sin(Angle)
+				local BoxWidth, BoxHeight = Right - Left, Bottom - Top
+				local Extent = math.max(BoxWidth * math.abs(Cos) + BoxHeight * math.abs(Sin), 1)
+				local Offset = Gradient.Offset
+				local Shift = Offset.X * BoxWidth * Cos + Offset.Y * BoxHeight * Sin
+				local CenterX, CenterY = Left + BoxWidth * 0.5, Top + BoxHeight * 0.5
+
+				local LutR, LutG, LutB, LutA = {}, {}, {}, {}
+				local Any = false
+				for Step = 0, GradientSteps do
+					local Time = Step / GradientSteps
+					local Tone = EvalColor(Gradient.Color, Time)
+					local Power = math.clamp(Strength * (1 - EvalNumber(Gradient.Transparency, Time)), 0, 1)
+					if Power > 0.01 then
+						Any = true
+					end
+					LutR[Step + 1] = Base.R * Tone.R * Power
+					LutG[Step + 1] = Base.G * Tone.G * Power
+					LutB[Step + 1] = Base.B * Tone.B * Power
+					LutA[Step + 1] = Power
+				end
+				if not Any then
+					return
+				end
+
+				local StepX = Cos * InverseScale / Extent
+				for Y = PxTop, PxBottom - 1 do
+					Pace()
+					local Row = Y * Width + 1
+					local AreaY = (Y + 0.5) * InverseScale - CenterY
+					local Time = 0.5 + (((PxLeft + 0.5) * InverseScale - CenterX) * Cos + AreaY * Sin - Shift) / Extent
+					for Index = Row + PxLeft, Row + PxRight - 1 do
+						local Slot = math.floor(Time * GradientSteps + 0.5)
+						if Slot < 0 then
+							Slot = 0
+						elseif Slot > GradientSteps then
+							Slot = GradientSteps
+						end
+						Slot += 1
+						local Power = LutA[Slot]
+						if Power > 0 then
+							local Keep = 1 - Power
+							Red[Index] = LutR[Slot] + Red[Index] * Keep
+							Green[Index] = LutG[Slot] + Green[Index] * Keep
+							Blue[Index] = LutB[Slot] + Blue[Index] * Keep
+							Alpha[Index] = Power + Alpha[Index] * Keep
+						end
+						Time += StepX
+					end
+				end
+				Count += 1
+			end
+
+			local function FillImage(
+				Label: ImageLabel | ImageButton,
+				Left: number,
+				Top: number,
+				Right: number,
+				Bottom: number,
+				Clip: { number },
+				Opacity: number
+			)
+				local Strength = (1 - Label.ImageTransparency) * Opacity
+				if Strength <= 0.01 then
+					return
+				end
+				local ScaleType = Label.ScaleType
+				if ScaleType ~= Enum.ScaleType.Crop and ScaleType ~= Enum.ScaleType.Fit and ScaleType ~= Enum.ScaleType.Stretch then
+					return false
+				end
+				if Label.ImageRectSize ~= Vector2.zero then
+					return false
+				end
+
+				local Pixels, ImageWidth, ImageHeight = ReadImagePixels(Label)
+				if not Pixels then
+					return false
+				end
+
+				local BoxWidth, BoxHeight = Right - Left, Bottom - Top
+				local DrawLeft, DrawTop, DrawWidth, DrawHeight = Left, Top, BoxWidth, BoxHeight
+				if ScaleType ~= Enum.ScaleType.Stretch then
+					local FitX, FitY = BoxWidth / ImageWidth, BoxHeight / ImageHeight
+					local Ratio = if ScaleType == Enum.ScaleType.Crop then math.max(FitX, FitY) else math.min(FitX, FitY)
+					DrawWidth, DrawHeight = ImageWidth * Ratio, ImageHeight * Ratio
+					DrawLeft, DrawTop = Left + (BoxWidth - DrawWidth) * 0.5, Top + (BoxHeight - DrawHeight) * 0.5
+				end
+				if DrawWidth < 1 or DrawHeight < 1 then
+					return
+				end
+
+				local VisibleClip = {
+					math.max(Clip[1], Left, DrawLeft),
+					math.max(Clip[2], Top, DrawTop),
+					math.min(Clip[3], Right, DrawLeft + DrawWidth),
+					math.min(Clip[4], Bottom, DrawTop + DrawHeight),
+				}
+				local PxLeft, PxTop, PxRight, PxBottom = PixelBounds(VisibleClip[1], VisibleClip[2], VisibleClip[3], VisibleClip[4], VisibleClip)
+				if PxRight <= PxLeft or PxBottom <= PxTop then
+					return
+				end
+
+				local Tint = Label.ImageColor3
+				local MapX, MapY = ImageWidth / DrawWidth, ImageHeight / DrawHeight
+				local LastX, LastY = ImageWidth - 1, ImageHeight - 1
+				local Normalize = 1 / 255
+
+				for Y = PxTop, PxBottom - 1 do
+					Pace()
+					local SourceY = math.clamp(math.floor(((Y + 0.5) * InverseScale - DrawTop) * MapY), 0, LastY)
+					local SourceRow = SourceY * ImageWidth
+					local Row = Y * Width + 1
+					for X = PxLeft, PxRight - 1 do
+						local SourceX = math.clamp(math.floor(((X + 0.5) * InverseScale - DrawLeft) * MapX), 0, LastX)
+						local Packed = buffer.readu32(Pixels, (SourceRow + SourceX) * 4)
+						local Power = (Packed // 16777216) * Normalize * Strength
+						if Power > 0.004 then
+							local Keep = 1 - Power
+							local Index = Row + X
+							Red[Index] = (Packed % 256) * Normalize * Tint.R * Power + Red[Index] * Keep
+							Green[Index] = ((Packed // 256) % 256) * Normalize * Tint.G * Power + Green[Index] * Keep
+							Blue[Index] = ((Packed // 65536) % 256) * Normalize * Tint.B * Power + Blue[Index] * Keep
+							Alpha[Index] = Power + Alpha[Index] * Keep
+						end
+					end
+				end
+				Count += 1
+			end
+
+			if Settings.BaseColor then
+				Fill(0, 0, AreaSize.X, AreaSize.Y, { 0, 0, AreaSize.X, AreaSize.Y }, Settings.BaseColor, 1 - (Settings.BaseTransparency or 0))
+			end
+
+			local Painted: { [Instance]: { [any]: boolean } } = {}
+			local Pictures: { any } = {}
+
+			local function Visit(Object: Instance, Clip: { number }, Opacity: number)
+				if Count >= MaxShapes or Exclude[Object] or Object.Name == "UiBlurLayer" then
+					return
+				end
+
+				local ChildClip = Clip
+				local ChildOpacity = Opacity
+
+				if Object:IsA("GuiObject") then
+					if not Object.Visible then
+						return
+					end
+					local Position = Object.AbsolutePosition - AreaPosition
+					local Size = Object.AbsoluteSize
+					local Left, Top = Position.X, Position.Y
+					local Right, Bottom = Left + Size.X, Top + Size.Y
+
+					if Object:IsA("CanvasGroup") then
+						ChildOpacity = Opacity * (1 - Object.GroupTransparency)
+						if ChildOpacity <= 0.02 then
+							return
+						end
+					end
+
+					if Object.BackgroundTransparency < 1 then
+						local Strength = (1 - Object.BackgroundTransparency) * ChildOpacity
+						local Gradient = FindGradient(Object)
+						if Gradient then
+							FillGradient(Left, Top, Right, Bottom, Clip, Object.BackgroundColor3, Strength, Gradient)
+						else
+							Fill(Left, Top, Right, Bottom, Clip, Object.BackgroundColor3, Strength)
+						end
+					end
+
+					if Object:IsA("TextLabel") or Object:IsA("TextButton") or Object:IsA("TextBox") then
+						if Object.Text ~= "" and Object.TextTransparency < 1 then
+							local Bounds = Object.TextBounds
+							local TextWidth = math.min(Bounds.X, Size.X)
+							local TextHeight = math.min(Bounds.Y * 0.65, Size.Y)
+							local OffsetX = if Object.TextXAlignment == Enum.TextXAlignment.Left
+								then 0
+								elseif Object.TextXAlignment == Enum.TextXAlignment.Right then Size.X - TextWidth
+								else (Size.X - TextWidth) / 2
+							local OffsetY = if Object.TextYAlignment == Enum.TextYAlignment.Top
+								then 0
+								elseif Object.TextYAlignment == Enum.TextYAlignment.Bottom then Size.Y - TextHeight
+								else (Size.Y - TextHeight) / 2
+							Fill(
+								Left + OffsetX,
+								Top + OffsetY,
+								Left + OffsetX + TextWidth,
+								Top + OffsetY + TextHeight,
+								Clip,
+								Object.TextColor3,
+								(1 - Object.TextTransparency) * ChildOpacity * 0.45
+							)
+						end
+					elseif Object:IsA("ImageLabel") or Object:IsA("ImageButton") then
+						local Source = Object.ImageContent
+						local Live = if Source.SourceType == Enum.ContentSourceType.Object then Source.Object else nil
+						local Identity: any = Live or (if Object.Image ~= "" then Object.Image else nil)
+						if
+							Identity ~= nil
+							and Object.ImageTransparency < 1
+							and (Size.X < MinImageSide or Size.Y < MinImageSide)
+						then
+							Fill(
+								Left + Size.X * 0.15,
+								Top + Size.Y * 0.15,
+								Right - Size.X * 0.15,
+								Bottom - Size.Y * 0.15,
+								Clip,
+								Object.ImageColor3,
+								(1 - Object.ImageTransparency) * ChildOpacity * 0.45
+							)
+						elseif
+							Identity ~= nil
+							and Object.ImageTransparency < 1
+							and Size.X >= MinImageSide
+							and Size.Y >= MinImageSide
+						then
+							local Parent = Object.Parent :: Instance
+							local Seen = Painted[Parent]
+							if not Seen then
+								Seen = {}
+								Painted[Parent] = Seen
+							end
+							if not Seen[Identity] then
+								Seen[Identity] = true
+								if FillImage(Object, Left, Top, Right, Bottom, Clip, ChildOpacity) == false then
+									local CoversArea = Size.X >= AreaSize.X * PictureCoverage
+										and Size.Y >= AreaSize.Y * PictureCoverage
+									if CoversArea and Object.Image ~= "" and #Pictures < 2 then
+										if not Underlay then
+											Underlay = Recorded
+											for Index = 1, Total do
+												Red[Index], Green[Index], Blue[Index], Alpha[Index] = 0, 0, 0, 0
+											end
+											Count = 0
+										end
+										table.insert(Pictures, {
+											Left = Left,
+											Top = Top,
+											Width = Size.X,
+											Height = Size.Y,
+											Clip = { Clip[1], Clip[2], Clip[3], Clip[4] },
+											Image = Object.Image,
+											ScaleType = Object.ScaleType,
+											Color = Object.ImageColor3,
+											Strength = (1 - Object.ImageTransparency) * ChildOpacity,
+										})
+									else
+										local Base = Object.ImageColor3
+										Fill(
+											Left,
+											Top,
+											Right,
+											Bottom,
+											Clip,
+											Color3.new(Base.R * 0.4, Base.G * 0.4, Base.B * 0.42),
+											(1 - Object.ImageTransparency) * ChildOpacity * 0.55
+										)
+									end
+								end
+							end
+						end
+					end
+
+					if Object.ClipsDescendants or Object:IsA("CanvasGroup") then
+						ChildClip = {
+							math.max(Clip[1], Left),
+							math.max(Clip[2], Top),
+							math.min(Clip[3], Right),
+							math.min(Clip[4], Bottom),
+						}
+					end
+				end
+
+				local Children = {}
+				for Index, Child in Object:GetChildren() do
+					if Child:IsA("GuiObject") then
+						table.insert(Children, { Child = Child, Order = Index, Layer = Child.ZIndex })
+					end
+				end
+				table.sort(Children, function(A, B)
+					if A.Layer ~= B.Layer then
+						return A.Layer < B.Layer
+					end
+					return A.Order < B.Order
+				end)
+				for _, Entry in Children do
+					Visit(Entry.Child, ChildClip, ChildOpacity)
+				end
+			end
+
+			Visit(Walk, { 0, 0, AreaSize.X, AreaSize.Y }, 1)
+
+			local Pixels = buffer.create(Total * 4)
+			for Index = 1, Total do
+				if Index % 8192 == 0 then
+					Pace()
+				end
+				local Coverage = Alpha[Index]
+				local PackedR, PackedG, PackedB, PackedA = 0, 0, 0, 0
+				if Coverage > 0.0005 then
+					local Inverse = 1 / Coverage
+					PackedR = math.floor(math.clamp(Red[Index] * Inverse, 0, 1) * 255 + 0.5)
+					PackedG = math.floor(math.clamp(Green[Index] * Inverse, 0, 1) * 255 + 0.5)
+					PackedB = math.floor(math.clamp(Blue[Index] * Inverse, 0, 1) * 255 + 0.5)
+					PackedA = math.floor(math.clamp(Coverage, 0, 1) * 255 + 0.5)
+				end
+				buffer.writeu32(Pixels, (Index - 1) * 4, PackedR + PackedG * 256 + PackedB * 65536 + PackedA * 16777216)
+			end
+
+			local Created = Backdrop.FromPixels(Area, Pixels, Width, Height)
+			Created.Pictures = Pictures
+			Created.Underlay = Underlay or {}
+			return Created
+		end)
+
+		if Success then
+			return Result
+		end
+		Library:Alert("UiBlur: rasterize failed - " .. tostring(Result))
+		return nil
+	end
+
+	function UiBlur.Signature(Walk: Instance, Exclude: { [Instance]: boolean }?): number
+		local Skip = Exclude or {}
+		local Acc, Seen = 0, 0
+		local SliceStart = os.clock()
+		local TextClasses = { TextLabel = true, TextButton = true, TextBox = true }
+		local ImageClasses = { ImageLabel = true, ImageButton = true }
+		local function Mix(Value: number)
+			Acc = (Acc * 31 + math.floor(Value * 1000)) % 2147483629
+		end
+		local function Visit(Object: Instance)
+			if Seen > 6000 or Skip[Object] or Object.Name == "UiBlurLayer" then
+				return
+			end
+			Seen += 1
+			if Seen % 48 == 0 and os.clock() - SliceStart > 0.004 then
+				task.wait()
+				SliceStart = os.clock()
+			end
+			local Children = nil
+			if Object:IsA("GuiObject") then
+				if not Object.Visible then
+					Mix(-1)
+					return
+				end
+				local Color = Object.BackgroundColor3
+				Mix(Color.R + Color.G * 3 + Color.B * 7 + Object.BackgroundTransparency * 11)
+				local Position, Size = Object.AbsolutePosition, Object.AbsoluteSize
+				Mix(Position.X + Position.Y * 5 + Size.X * 13 + Size.Y * 17)
+				local ClassName = Object.ClassName
+				if TextClasses[ClassName] then
+					local Text = Object.TextColor3
+					Mix(#Object.Text + Text.R + Text.G * 3 + Text.B * 7 + Object.TextTransparency * 11)
+				elseif ImageClasses[ClassName] then
+					local Tint = Object.ImageColor3
+					Mix(#Object.Image + Tint.R + Tint.G * 3 + Tint.B * 7 + Object.ImageTransparency * 11)
+				end
+				if ClassName == "CanvasGroup" then
+					Mix(Object.GroupTransparency * 19)
+				end
+				Children = Object:GetChildren()
+				local Gradient = nil
+				for _, Child in Children do
+					if Child.ClassName == "UIGradient" and Child.Enabled then
+						Gradient = Child
+						break
+					end
+				end
+				if Gradient then
+					local Keypoints = Gradient.Color.Keypoints
+					for _, Key in Keypoints do
+						Mix(Key.Value.R + Key.Value.G * 3 + Key.Value.B * 7)
+					end
+					Mix(Gradient.Rotation)
+				end
+			end
+			for _, Child in Children or Object:GetChildren() do
+				Visit(Child)
+			end
+		end
+		Visit(Walk)
+		return Acc
+	end
+
+	function UiBlur.FromImage(Label: ImageLabel, Config: { [string]: any }?): (any, string?)
+		local Settings = Config or {}
+		local AreaSize = Label.AbsoluteSize
+		if AreaSize.X < 1 or AreaSize.Y < 1 then
+			return nil, "size"
+		end
+		local Pixels, ImageWidth, ImageHeight = ReadImagePixels(Label)
+		if not Pixels then
+			return nil, "pixels"
+		end
+
+		local Scale = math.min(1, (Settings.MaxSize or 384) / math.max(AreaSize.X, AreaSize.Y))
+		local Width = math.max(1, math.ceil(AreaSize.X * Scale))
+		local Height = math.max(1, math.ceil(AreaSize.Y * Scale))
+		local InverseScale = 1 / Scale
+		local ScaleType = Label.ScaleType
+		local BoxWidth, BoxHeight = AreaSize.X, AreaSize.Y
+		local IsTile = ScaleType == Enum.ScaleType.Tile
+		local DrawLeft, DrawTop, DrawWidth, DrawHeight = 0, 0, BoxWidth, BoxHeight
+		if ScaleType == Enum.ScaleType.Crop or ScaleType == Enum.ScaleType.Fit then
+			local FitX, FitY = BoxWidth / ImageWidth, BoxHeight / ImageHeight
+			local Ratio = if ScaleType == Enum.ScaleType.Crop then math.max(FitX, FitY) else math.min(FitX, FitY)
+			DrawWidth, DrawHeight = ImageWidth * Ratio, ImageHeight * Ratio
+			DrawLeft, DrawTop = (BoxWidth - DrawWidth) * 0.5, (BoxHeight - DrawHeight) * 0.5
+		end
+		local TileSize = Label.TileSize
+		local TileWidth = math.max(TileSize.X.Scale * BoxWidth + TileSize.X.Offset, 1)
+		local TileHeight = math.max(TileSize.Y.Scale * BoxHeight + TileSize.Y.Offset, 1)
+		local MapX, MapY = ImageWidth / DrawWidth, ImageHeight / DrawHeight
+		local LastX, LastY = ImageWidth - 1, ImageHeight - 1
+
+		local Output = buffer.create(Width * Height * 4)
+		local Budget = UiBlur.Settings.RasterBudget
+		local SliceStart = os.clock()
+		for Y = 0, Height - 1 do
+			if os.clock() - SliceStart > Budget then
+				task.wait()
+				SliceStart = os.clock()
+			end
+			local AreaY = (Y + 0.5) * InverseScale
+			local RowOffset = Y * Width
+			for X = 0, Width - 1 do
+				local AreaX = (X + 0.5) * InverseScale
+				local Packed = 0
+				local SourceX, SourceY
+				if IsTile then
+					SourceX = math.floor((AreaX % TileWidth) / TileWidth * ImageWidth)
+					SourceY = math.floor((AreaY % TileHeight) / TileHeight * ImageHeight)
+				else
+					local OffsetX, OffsetY = AreaX - DrawLeft, AreaY - DrawTop
+					if OffsetX >= 0 and OffsetY >= 0 and OffsetX < DrawWidth and OffsetY < DrawHeight then
+						SourceX = math.floor(OffsetX * MapX)
+						SourceY = math.floor(OffsetY * MapY)
+					end
+				end
+				if SourceX then
+					SourceX = math.clamp(SourceX, 0, LastX)
+					SourceY = math.clamp(SourceY, 0, LastY)
+					Packed = buffer.readu32(Pixels, (SourceY * ImageWidth + SourceX) * 4)
+				end
+				buffer.writeu32(Output, (RowOffset + X) * 4, Packed)
+			end
+		end
+
+		return Backdrop.FromPixels(Label, Output, Width, Height), nil
+	end
+
+	local BackdropCache = setmetatable({}, { __mode = "k" })
+	local BackdropPending: { [any]: boolean } = {}
+	local DefaultBackdrop: any = nil
+
+	local function ResolveBackdrop(Value: any): any
+		if getmetatable(Value) == Backdrop then
+			return Value
+		end
+		local Cached = BackdropCache[Value]
+		if Cached then
+			return Cached
+		end
+		if BackdropPending[Value] then
+			while BackdropPending[Value] do
+				task.wait()
+			end
+			return BackdropCache[Value]
+		end
+		BackdropPending[Value] = true
+		local Success, Result = pcall(Backdrop.FromImageLabel, Value)
+		BackdropPending[Value] = nil
+		if not Success then
+			Library:Alert("UiBlur: invalid Backdrop - " .. tostring(Result))
+			return nil
+		end
+		BackdropCache[Value] = Result
+		return Result
+	end
+
+	function UiBlur.SetDefaultBackdrop(Value: any)
+		DefaultBackdrop = Value
+	end
+
+	local NoiseImage: EditableImage? = nil
+
+	local function GetNoiseContent(): Content
+		local Settings = UiBlur.Settings
+		if Settings.NoiseAssetId then
+			return Content.fromAssetId(Settings.NoiseAssetId)
+		end
+		if not NoiseImage then
+			local Size = Settings.NoiseTileSize
+			local Image = AssetService:CreateEditableImage({ Size = Vector2.new(Size, Size) })
+			local Pixels = buffer.create(Size * Size * 4)
+			local Generator = Random.new(1337)
+			for Index = 0, Size * Size - 1 do
+				local Sample = Generator:NextInteger(0, 255)
+				local Shade = if Sample >= 128 then 255 else 0
+				local Alpha = math.min(255, math.floor(math.abs(Sample - 127.5) * 2))
+				buffer.writeu32(Pixels, Index * 4, Shade + Shade * 256 + Shade * 65536 + Alpha * 16777216)
+			end
+			Image:WritePixelsBuffer(Vector2.zero, Vector2.new(Size, Size), Pixels)
+			NoiseImage = Image
+		end
+		return Content.fromObject(NoiseImage :: EditableImage)
+	end
+
+	local Element = {}
+	local Active: { [any]: boolean } = {}
+	local LoopConnection: RBXScriptConnection? = nil
+
+	function MarkDirty(Self: any)
+		local State = Self.State
+		State.Dirty = true
+		State.LastChange = os.clock()
+	end
+
+	local function Cancel(Self: any)
+		Self.State.Version += 1
+	end
+
+	local function ClampProp(Key: string, Value: number): number
+		local Range = Ranges[Key]
+		if Range then
+			return math.clamp(Value, Range[1], Range[2])
+		end
+		return Value
+	end
+
+	local function ApplyVisuals(Self: any)
+		local State, Values = Self.State, Self.Props
+		State.Layer.Visible = State.Enabled and Values.Opacity > 0.01
+		State.Layer.GroupTransparency = 1 - Values.Opacity
+		State.Image.ImageTransparency = 0
+		State.TintFrame.BackgroundColor3 = Values.Tint
+		State.TintFrame.BackgroundTransparency = Values.TintTransparency
+		State.TintFrame.Visible = Values.TintTransparency < 1
+		if Values.Noise > 0 then
+			if not State.NoiseReady then
+				State.NoiseLabel.ImageContent = GetNoiseContent()
+				State.NoiseReady = true
+			end
+			State.NoiseLabel.ImageTransparency = 1 - Values.Noise
+			State.NoiseLabel.Visible = true
+		else
+			State.NoiseLabel.Visible = false
+		end
+	end
+
+	local function AttachParent(Self: any, Parent: GuiObject?)
+		local State = Self.State
+		if Parent ~= nil then
+			assert(typeof(Parent) == "Instance" and Parent:IsA("GuiObject"), "UiBlur.Parent must be a GuiObject")
+		end
+		Cancel(Self)
+		State.Parent = Parent
+		State.Layer.Parent = Parent
+		if State.Corner then
+			State.Corner:Destroy()
+			State.Corner = nil
+		end
+		if Parent then
+			local Corner = Parent:FindFirstChildOfClass("UICorner")
+			if Corner then
+				State.Corner = Corner:Clone()
+				State.Corner.Parent = State.Layer
+			end
+			MarkDirty(Self)
+		end
+	end
+
+	local function AttachBackdrop(Self: any, Value: any)
+		local State = Self.State
+		Cancel(Self)
+		State.BackdropValue = Value
+		State.BackdropToken += 1
+		local Token = State.BackdropToken
+		if State.Source then
+			State.Source.Elements[Self] = nil
+			State.Source = nil
+		end
+		State.Cover = nil
+		if Value == nil then
+			State.Image.Visible = false
+			return
+		end
+		task.spawn(function()
+			local Source = ResolveBackdrop(Value)
+			if Source and State.Alive and State.BackdropToken == Token then
+				State.Source = Source
+				Source.Elements[Self] = true
+				MarkDirty(Self)
+			end
+		end)
+	end
+
+	local PictureRings = {
+		{ Count = 6, Scale = 0.5, Phase = 30 },
+		{ Count = 6, Scale = 1, Phase = 0 },
+	}
+
+	local function PictureKey(Source: any): string
+		if not Source then
+			return ""
+		end
+		local Parts: { string } = {}
+		for _, Entry in Source.Underlay or {} do
+			local Tone = if Entry.Gradient then tostring(Entry.Gradient.Color.Keypoints[1].Value) .. Entry.Gradient.Rotation else ""
+			table.insert(Parts, string.format("U%.1f,%.1f,%.1f,%.1f,%.2f,%s,%s", Entry.Left, Entry.Top, Entry.Right, Entry.Bottom, Entry.Strength, tostring(Entry.Color), Tone))
+		end
+		for _, Entry in Source.Pictures or {} do
+			table.insert(Parts, string.format("P%.1f,%.1f,%.1f,%.1f,%.2f,%s,%s,%s", Entry.Left, Entry.Top, Entry.Width, Entry.Height, Entry.Strength, Entry.Image, tostring(Entry.ScaleType), tostring(Entry.Color)))
+		end
+		return table.concat(Parts, "|")
+	end
+
+	local function SyncPictures(Self: any, Values: Props)
+		local State = Self.State
+		local Source, Holder = State.Source, State.Pictures
+		if State.PictureSource ~= Source then
+			State.PictureSource = Source
+			local Key = PictureKey(Source)
+			if State.PictureKey ~= Key then
+				State.PictureKey = Key
+				State.PictureCopies = {}
+				Holder:ClearAllChildren()
+				for _, Entry in (Source and Source.Underlay) or {} do
+					local Clip = Entry.Clip
+					local Clipper = Instance.new("Frame")
+					Clipper.BackgroundTransparency = 1
+					Clipper.BorderSizePixel = 0
+					Clipper.ClipsDescendants = true
+					Clipper.Position = UDim2.fromOffset(Clip[1], Clip[2])
+					Clipper.Size = UDim2.fromOffset(math.max(Clip[3] - Clip[1], 0), math.max(Clip[4] - Clip[2], 0))
+					Clipper.Parent = Holder
+
+					local Block = Instance.new("Frame")
+					Block.BorderSizePixel = 0
+					Block.BackgroundColor3 = Entry.Color
+					Block.BackgroundTransparency = 1 - math.clamp(Entry.Strength, 0, 1)
+					Block.Position = UDim2.fromOffset(Entry.Left - Clip[1], Entry.Top - Clip[2])
+					Block.Size = UDim2.fromOffset(Entry.Right - Entry.Left, Entry.Bottom - Entry.Top)
+					Block.Parent = Clipper
+					if Entry.Gradient then
+						Entry.Gradient.Parent = Block
+					end
+				end
+				for _, Entry in (Source and Source.Pictures) or {} do
+					local Clip = Entry.Clip
+					local Clipper = Instance.new("Frame")
+					Clipper.BackgroundTransparency = 1
+					Clipper.BorderSizePixel = 0
+					Clipper.ClipsDescendants = true
+					Clipper.Position = UDim2.fromOffset(Clip[1], Clip[2])
+					Clipper.Size = UDim2.fromOffset(math.max(Clip[3] - Clip[1], 0), math.max(Clip[4] - Clip[2], 0))
+					Clipper.Parent = Holder
+
+					local Group = Instance.new("CanvasGroup")
+					Group.BackgroundTransparency = 1
+					Group.BorderSizePixel = 0
+					Group.Position = UDim2.fromOffset(Entry.Left - Clip[1], Entry.Top - Clip[2])
+					Group.Size = UDim2.fromOffset(Entry.Width, Entry.Height)
+					Group.GroupTransparency = 1 - math.clamp(Entry.Strength, 0, 1)
+					Group.Parent = Clipper
+
+					local Index = 0
+					local function Copy(X: number, Y: number)
+						Index += 1
+						local Label = Instance.new("ImageLabel")
+						Label.BackgroundTransparency = 1
+						Label.BorderSizePixel = 0
+						Label.Image = Entry.Image
+						Label.ScaleType = Entry.ScaleType
+						Label.ImageColor3 = Entry.Color
+						Label.ImageTransparency = 1 - 1 / Index
+						Label.Size = UDim2.fromScale(1, 1)
+						Label.ZIndex = Index
+						Label.Parent = Group
+						table.insert(State.PictureCopies, { Label = Label, X = X, Y = Y })
+					end
+					Copy(0, 0)
+					for _, Ring in PictureRings do
+						for Step = 0, Ring.Count - 1 do
+							local Angle = math.rad(Ring.Phase + Step * 360 / Ring.Count)
+							Copy(math.cos(Angle) * Ring.Scale, math.sin(Angle) * Ring.Scale)
+						end
+					end
+				end
+			else
+				for _, Entry in (Source and Source.Underlay) or {} do
+					if Entry.Gradient then
+						Entry.Gradient:Destroy()
+						Entry.Gradient = nil
+					end
+				end
+			end
+		end
+		local Radius = Values.Blur * 1.5
+		for _, Item in State.PictureCopies do
+			Item.Label.Position = UDim2.fromOffset(Item.X * Radius, Item.Y * Radius)
+		end
+	end
+
+	local function PlaceImage(Self: any)
+		local State = Self.State
+		local Cover: Cover? = State.Cover
+		local Frame, Source = State.Parent, State.Source
+		if not Cover or not Frame or not Source then
+			return
+		end
+		local FramePosition = Frame.AbsolutePosition
+		local AreaPosition = Source.Area.AbsolutePosition
+		local Position = UDim2.fromOffset(AreaPosition.X - FramePosition.X, AreaPosition.Y - FramePosition.Y)
+		local Size = UDim2.fromOffset(Cover.Width, Cover.Height)
+		local PictureSize = UDim2.fromOffset(Source.Area.AbsoluteSize.X, Source.Area.AbsoluteSize.Y)
+		if State.PlacedPosition ~= Position then
+			State.PlacedPosition = Position
+			State.Pictures.Position = Position
+		end
+		if State.PlacedSize ~= PictureSize then
+			State.PlacedSize = PictureSize
+			State.Pictures.Size = PictureSize
+		end
+		local Image: ImageLabel = State.Image
+		if Image.Position ~= Position then
+			Image.Position = Position
+		end
+		if Image.Size ~= Size then
+			Image.Size = Size
+		end
+		if not Image.Visible then
+			Image.Visible = true
+		end
+	end
+
+	local function Process(Self: any)
+		local State = Self.State
+		if State.Busy or not State.Alive then
+			return
+		end
+		State.Busy = true
+		State.Dirty = false
+		local Version = State.Version
+
+		local Success, Message = pcall(function()
+			local Settings = UiBlur.Settings
+			local Source = State.Source
+			if not State.Parent or not Source then
+				return
+			end
+
+			local Values: Props = table.clone(Self.Props)
+			SyncPictures(Self, Values)
+			local SliceStart = os.clock()
+			local Budget = if State.Cover == nil then Settings.FirstSliceBudget else Settings.SliceBudget
+			local function CheckTick(): boolean
+				if os.clock() - SliceStart > Budget then
+					task.wait()
+					SliceStart = os.clock()
+				end
+				return State.Alive and State.Version == Version
+			end
+
+			local Preview = State.Cover ~= nil and os.clock() - State.LastChange < Settings.PreviewWindow
+			State.WasPreview = Preview
+
+			local AreaSize = Source.Area.AbsoluteSize
+			local SourceWidth, SourceHeight = Source.SourceWidth, Source.SourceHeight
+			local ScaleX, ScaleY = SourceWidth / AreaSize.X, SourceHeight / AreaSize.Y
+
+			local SigmaSource = Values.Blur * (ScaleX + ScaleY) * 0.5
+			local Wanted = math.max(1, math.floor(SigmaSource / Settings.SigmaTarget))
+			if Preview then
+				Wanted *= Settings.PreviewFactor
+			end
+			Wanted = math.max(Wanted, math.ceil(math.sqrt(SourceWidth * SourceHeight / Settings.MaxPixels)))
+			local Factor = 1
+			while Factor < Wanted do
+				Factor *= 2
+			end
+
+			local Work = Source:GetWork(Factor, CheckTick) :: Work?
+			if not Work then
+				return
+			end
+
+			local WorkWidth, WorkHeight = Work.Width, Work.Height
+			local Total = WorkWidth * WorkHeight
+			local Red, Green, Blue = table.clone(Work.Red), table.clone(Work.Green), table.clone(Work.Blue)
+			local Alpha: Channel? = if Work.Alpha then table.clone(Work.Alpha) else nil
+
+			local SigmaWork = SigmaSource / Factor
+			if SigmaWork >= 0.35 then
+				if not GaussianBlur(Red, Green, Blue, WorkWidth, WorkHeight, SigmaWork, CheckTick) then
+					return
+				end
+				if Alpha and not BlurChannel(Alpha, WorkWidth, WorkHeight, SigmaWork, CheckTick) then
+					return
+				end
+			end
+
+			local ColorMatrix, IsIdentity = BuildMatrix(Values)
+			local M1, M2, M3, M4, M5, M6, M7, M8, M9, M10, M11, M12 = table.unpack(ColorMatrix, 1, 12)
+			local Output = buffer.create(Total * 4)
+			local OpaqueAlpha = 255 * 16777216
+			local WriteOffset = 0
+
+			for Index = 1, Total do
+				if Index % 8192 == 0 and not CheckTick() then
+					return
+				end
+				local R, G, B = Red[Index], Green[Index], Blue[Index]
+				local PackedA = OpaqueAlpha
+				if Alpha then
+					local Opacity = Alpha[Index]
+					local Inverse = if Opacity > 0.001 then 1 / Opacity else 0
+					R, G, B = R * Inverse, G * Inverse, B * Inverse
+					PackedA = math.floor(math.clamp(Opacity, 0, 1) * 255 + 0.5) * 16777216
+				end
+				if not IsIdentity then
+					R, G, B = M1 * R + M2 * G + M3 * B + M4, M5 * R + M6 * G + M7 * B + M8, M9 * R + M10 * G + M11 * B + M12
+				end
+				local PackedR = math.floor(math.clamp(R, 0, 1) * 255 + 0.5)
+				local PackedG = math.floor(math.clamp(G, 0, 1) * 255 + 0.5)
+				local PackedB = math.floor(math.clamp(B, 0, 1) * 255 + 0.5)
+				buffer.writeu32(Output, WriteOffset, PackedR + PackedG * 256 + PackedB * 65536 + PackedA)
+				WriteOffset += 4
+			end
+
+			if not CheckTick() then
+				return
+			end
+
+			local WorkSize = Vector2.new(WorkWidth, WorkHeight)
+			if not State.Output or State.OutputWidth ~= WorkWidth or State.OutputHeight ~= WorkHeight then
+				local Created = AssetService:CreateEditableImage({ Size = WorkSize })
+				Created:WritePixelsBuffer(Vector2.zero, WorkSize, Output)
+				local Previous = State.Output
+				State.Output = Created
+				State.OutputWidth, State.OutputHeight = WorkWidth, WorkHeight
+				State.Image.ImageContent = Content.fromObject(Created)
+				if Previous then
+					task.delay(0.15, function()
+						Previous:Destroy()
+					end)
+				end
+			else
+				State.Output:WritePixelsBuffer(Vector2.zero, WorkSize, Output)
+			end
+
+			State.Cover = {
+				Width = WorkWidth * Factor / ScaleX,
+				Height = WorkHeight * Factor / ScaleY,
+			}
+			PlaceImage(Self)
+		end)
+
+		State.Busy = false
+		if not Success then
+			Library:Alert("UiBlur: processing failed - " .. tostring(Message))
+		end
+	end
+
+	local function Update(Self: any)
+		local State = Self.State
+		local Frame, Source = State.Parent, State.Source
+		if not State.Enabled or not Frame or not Source or not Frame.Visible then
+			return
+		end
+		if not Source.Area.Parent then
+			return
+		end
+
+		local AreaSize = Source.Area.AbsoluteSize
+		if AreaSize.X < 1 or AreaSize.Y < 1 or Frame.AbsoluteSize.X < 1 or Frame.AbsoluteSize.Y < 1 then
+			return
+		end
+
+		if AreaSize ~= State.LastAreaSize then
+			State.LastAreaSize = AreaSize
+			MarkDirty(Self)
+		end
+
+		PlaceImage(Self)
+
+		if State.Busy then
+			return
+		end
+
+		local Settings = UiBlur.Settings
+		local NeedsRefine = State.WasPreview and os.clock() - State.LastChange >= Settings.PreviewWindow
+		if State.Dirty or NeedsRefine or not State.Cover then
+			task.spawn(Process, Self)
+		end
+	end
+
+	local function StartLoop()
+		if LoopConnection then
+			return
+		end
+		LoopConnection = PreRender:Connect(function()
+			for Item in Active do
+				Update(Item)
+			end
+		end)
+	end
+
+	local function StopLoopIfIdle()
+		if LoopConnection and next(Active) == nil then
+			LoopConnection:Disconnect()
+			LoopConnection = nil
+		end
+	end
+
+	Element.__index = function(Self: any, Key: string): any
+		local Method = Element[Key]
+		if Method ~= nil then
+			return Method
+		end
+		if Defaults[Key :: any] ~= nil then
+			return Self.Props[Key]
+		end
+		local State = Self.State
+		if Key == "Parent" then
+			return State.Parent
+		elseif Key == "Backdrop" then
+			return State.BackdropValue
+		elseif Key == "Enabled" then
+			return State.Enabled
+		elseif Key == "ClassName" then
+			return "UiBlur"
+		end
+		return nil
+	end
+
+	Element.__newindex = function(Self: any, Key: string, Value: any)
+		if Defaults[Key :: any] ~= nil or SpecialProps[Key] then
+			Element.Set(Self, { [Key] = Value })
+		else
+			error(("%s is not a valid member of UiBlur"):format(tostring(Key)), 2)
+		end
+	end
+
+	function Element.Set(Self: any, Values: { [string]: any })
+		local State, Props = Self.State, Self.Props
+		local PixelChanged = false
+
+		for Key, Value in Values do
+			if Key == "Parent" then
+				AttachParent(Self, Value)
+			elseif Key == "Backdrop" then
+				AttachBackdrop(Self, Value)
+			elseif Key == "Enabled" then
+				State.Enabled = Value == true
+				if State.Enabled then
+					MarkDirty(Self)
+				end
+			else
+				local Default = (Defaults :: any)[Key]
+				if Default == nil then
+					Library:Alert(("UiBlur: %s is not a valid property"):format(tostring(Key)))
+				else
+					if typeof(Default) == "number" then
+						Value = ClampProp(Key, tonumber(Value) or Default)
+					end
+					if Props[Key] ~= Value then
+						Props[Key] = Value
+						if PixelProps[Key] then
+							PixelChanged = true
+						end
+					end
+				end
+			end
+		end
+
+		ApplyVisuals(Self)
+		if PixelChanged then
+			MarkDirty(Self)
+		end
+	end
+
+	function Element.IsReady(Self: any): boolean
+		return Self.State.Cover ~= nil and Self.State.Image.Visible
+	end
+
+	function Element.Tween(
+		Self: any,
+		Goal: { [string]: any },
+		Duration: number?,
+		Style: Enum.EasingStyle?,
+		Direction: Enum.EasingDirection?
+	)
+		local State = Self.State
+		State.TweenId += 1
+		local Id = State.TweenId
+		if not Duration or Duration <= 0 then
+			Element.Set(Self, Goal)
+			return
+		end
+
+		local Start = {}
+		for Key in Goal do
+			Start[Key] = Self.Props[Key]
+		end
+
+		task.spawn(function()
+			local Elapsed = 0
+			while State.Alive and State.TweenId == Id do
+				Elapsed += PreRender:Wait()
+				local Progress = math.min(Elapsed / Duration, 1)
+				local Alpha = TweenService:GetValue(
+					Progress,
+					Style or Enum.EasingStyle.Quad,
+					Direction or Enum.EasingDirection.Out
+				)
+				local Step = {}
+				for Key, Target in Goal do
+					local From = Start[Key]
+					if From == nil then
+						Step[Key] = Target
+					elseif typeof(From) == "Color3" then
+						Step[Key] = From:Lerp(Target, Alpha)
+					else
+						Step[Key] = From + (Target - From) * Alpha
+					end
+				end
+				Element.Set(Self, Step)
+				if Progress >= 1 then
+					break
+				end
+			end
+		end)
+	end
+
+	function Element.Destroy(Self: any)
+		local State = Self.State
+		if not State.Alive then
+			return
+		end
+		State.Alive = false
+		State.Version += 1
+		State.TweenId += 1
+		Active[Self] = nil
+		if State.Source then
+			State.Source.Elements[Self] = nil
+		end
+		StopLoopIfIdle()
+		if State.Output then
+			State.Output:Destroy()
+			State.Output = nil
+		end
+		if State.OwnedSource then
+			State.OwnedSource:Destroy()
+			State.OwnedSource = nil
+		end
+		State.Layer:Destroy()
+	end
+
+	function UiBlur.new(): any
+		assert(RunService:IsClient(), "UiBlur only runs on the client")
+
+		local Layer = Instance.new("CanvasGroup")
+		Layer.Name = "UiBlurLayer"
+		Layer.BackgroundTransparency = 1
+		Layer.BorderSizePixel = 0
+		Layer.Size = UDim2.fromScale(1, 1)
+		Layer.ZIndex = 0
+		Layer.Active = false
+		Layer.Selectable = false
+
+		local Image = Instance.new("ImageLabel")
+		Image.Name = "Backdrop"
+		Image.BackgroundTransparency = 1
+		Image.BorderSizePixel = 0
+		Image.ScaleType = Enum.ScaleType.Stretch
+		Image.ZIndex = 1
+		Image.Visible = false
+		Image.Parent = Layer
+
+		local Pictures = Instance.new("Frame")
+		Pictures.Name = "Pictures"
+		Pictures.BackgroundTransparency = 1
+		Pictures.BorderSizePixel = 0
+		Pictures.ZIndex = 0
+		Pictures.Parent = Layer
+
+		local TintFrame = Instance.new("Frame")
+		TintFrame.Name = "Tint"
+		TintFrame.BorderSizePixel = 0
+		TintFrame.Size = UDim2.fromScale(1, 1)
+		TintFrame.ZIndex = 2
+		TintFrame.Parent = Layer
+
+		local TileSize = UiBlur.Settings.NoiseTileSize
+		local NoiseLabel = Instance.new("ImageLabel")
+		NoiseLabel.Name = "Noise"
+		NoiseLabel.BackgroundTransparency = 1
+		NoiseLabel.BorderSizePixel = 0
+		NoiseLabel.Size = UDim2.fromScale(1, 1)
+		NoiseLabel.ScaleType = Enum.ScaleType.Tile
+		NoiseLabel.TileSize = UDim2.fromOffset(TileSize, TileSize)
+		NoiseLabel.ZIndex = 3
+		NoiseLabel.Visible = false
+		NoiseLabel.Parent = Layer
+
+		local Self = setmetatable({
+			Props = table.clone(Defaults),
+			State = {
+				Layer = Layer,
+				Image = Image,
+				Pictures = Pictures,
+				PictureSource = nil,
+				PictureCopies = {},
+				TintFrame = TintFrame,
+				NoiseLabel = NoiseLabel,
+				NoiseReady = false,
+				Parent = nil,
+				Source = nil,
+				BackdropValue = nil,
+				BackdropToken = 0,
+				Corner = nil,
+				Output = nil,
+				OutputWidth = 0,
+				OutputHeight = 0,
+				Cover = nil,
+				LastAreaSize = Vector2.zero,
+				Enabled = true,
+				Dirty = true,
+				WasPreview = false,
+				LastChange = 0,
+				Busy = false,
+				Version = 0,
+				TweenId = 0,
+				Alive = true,
+			},
+		}, Element)
+
+		Layer.Destroying:Connect(function()
+			Element.Destroy(Self)
+		end)
+
+		Active[Self] = true
+		StartLoop()
+		ApplyVisuals(Self)
+
+		if DefaultBackdrop ~= nil then
+			AttachBackdrop(Self, DefaultBackdrop)
+		end
+
+		return Self
+	end
+
+	return UiBlur
+end)()
+
 local Creator = {
 	Registry = setmetatable({}, { __mode = "k" }) :: { [Instance]: Registered },
 	Icons = setmetatable({}, { __mode = "k" }),
@@ -2883,39 +4847,523 @@ function Creator.AddSignal(signal: RBXScriptSignal, callback: (...any) -> ()): R
 	return connection
 end
 
-function Creator.IsTopmost(Object: GuiObject): boolean
+Creator.Surfaces = setmetatable({}, { __mode = "k" })
+
+function Creator.RegisterSurface(Root: GuiObject): GuiObject
+	Creator.Surfaces[Root] = true
+	return Root
+end
+
+function Creator.GetSurface(Object: Instance): GuiObject?
+	local Current: Instance? = Object
+	while Current do
+		if Creator.Surfaces[Current] then
+			return Current :: GuiObject
+		end
+		Current = Current.Parent
+	end
+	return nil
+end
+
+local HoverStates = setmetatable({}, { __mode = "k" })
+
+local HoverEnterDelay = 0.03
+local HoverLeaveDelay = 0.06
+local HoverPollInterval = 0.05
+local HoverCoverStrikes = 2
+
+local function IsShown(Object: GuiObject): boolean
+	local Current: Instance? = Object
+	while Current do
+		if Current:IsA("GuiObject") and not Current.Visible then
+			return false
+		end
+		if Current:IsA("LayerCollector") then
+			return not Current:IsA("ScreenGui") or Current.Enabled
+		end
+		Current = Current.Parent
+	end
+	return false
+end
+
+local ActiveTouch: InputObject? = nil
+local FrozenInputs: { [InputObject]: boolean } = {}
+local SurfaceCovered = setmetatable({}, { __mode = "k" })
+local CoverConnection: RBXScriptConnection? = nil
+local ActiveHovers = setmetatable({}, { __mode = "k" })
+local LastTouchPoint: Vector2? = nil
+local LastTouchClock = 0
+local PressState = setmetatable({}, { __mode = "k" })
+local UpHandlers = setmetatable({}, { __mode = "k" })
+
+Creator.SurfaceLocks = setmetatable({}, { __mode = "k" })
+
+function Creator.GetPointer(Object: Instance?, Input: InputObject?): Vector2
+	local Touch: InputObject? = nil
+	if Input == nil or Input.UserInputType == Enum.UserInputType.Touch then
+		Touch = Input or ActiveTouch
+	end
+	if
+		Touch
+		and Touch.UserInputState ~= Enum.UserInputState.End
+		and Touch.UserInputState ~= Enum.UserInputState.Cancel
+	then
+		return Vector2.new(Touch.Position.X, Touch.Position.Y)
+	end
+	if
+		Input == nil
+		and LastTouchPoint
+		and (not UserInputService.MouseEnabled or os.clock() - LastTouchClock < 0.75)
+	then
+		return LastTouchPoint
+	end
+	local Mouse = UserInputService:GetMouseLocation()
+	local Gui = Object and Object:FindFirstAncestorOfClass("ScreenGui")
+	if Gui and not Gui.IgnoreGuiInset then
+		Mouse -= GuiService:GetGuiInset()
+	end
+	return Mouse
+end
+
+local function RectContains(Object: GuiObject, Point: Vector2, Margin: number?): boolean
+	local Extra = Margin or 0
+	local Position, Size = Object.AbsolutePosition, Object.AbsoluteSize
+	return Point.X >= Position.X - Extra
+		and Point.X <= Position.X + Size.X + Extra
+		and Point.Y >= Position.Y - Extra
+		and Point.Y <= Position.Y + Size.Y + Extra
+end
+
+local function VisibleRect(Object: GuiObject): (Vector2, Vector2)
+	local Position, Size = Object.AbsolutePosition, Object.AbsoluteSize
+	local Left, Top = Position.X, Position.Y
+	local Right, Bottom = Left + Size.X, Top + Size.Y
+	local Current = Object.Parent
+	while Current and not Current:IsA("LayerCollector") do
+		if Current:IsA("GuiObject") and (Current.ClipsDescendants or Current:IsA("CanvasGroup")) then
+			local ClipPosition, ClipSize = Current.AbsolutePosition, Current.AbsoluteSize
+			Left = math.max(Left, ClipPosition.X)
+			Top = math.max(Top, ClipPosition.Y)
+			Right = math.min(Right, ClipPosition.X + ClipSize.X)
+			Bottom = math.min(Bottom, ClipPosition.Y + ClipSize.Y)
+		end
+		Current = Current.Parent
+	end
+	return Vector2.new(Left, Top), Vector2.new(Right, Bottom)
+end
+
+local function PointerInside(Object: GuiObject, Input: InputObject?): boolean
+	if
+		Input
+		and Input.UserInputType == Enum.UserInputType.Touch
+		and (Input.UserInputState == Enum.UserInputState.End or Input.UserInputState == Enum.UserInputState.Cancel)
+	then
+		return false
+	end
+	local Point = Creator.GetPointer(Object, Input)
+	local Min, Max = VisibleRect(Object)
+	return Point.X >= Min.X - 1 and Point.X <= Max.X + 1 and Point.Y >= Min.Y - 1 and Point.Y <= Max.Y + 1
+end
+
+local function ChainOf(Object: Instance): { Instance }
+	local Chain = {}
+	local Current: Instance? = Object
+	while Current do
+		table.insert(Chain, 1, Current)
+		Current = Current.Parent
+	end
+	return Chain
+end
+
+local function OrderOf(Chain: { Instance }, Depth: number): (number, number)
+	local Node = Chain[Depth]
+	local Parent = Node.Parent
+	local Index = if Parent then (table.find(Parent:GetChildren(), Node) or 0) else 0
+	local Layer = 0
+	for Step = Depth, #Chain do
+		local Current = Chain[Step]
+		if Current:IsA("GuiObject") then
+			Layer = Current.ZIndex
+			break
+		end
+	end
+	return Layer, Index
+end
+
+local function DrawsAbove(First: Instance, Second: Instance): boolean
+	if First:IsDescendantOf(Second) then
+		return true
+	end
+	if Second:IsDescendantOf(First) then
+		return false
+	end
+	local ChainA, ChainB = ChainOf(First), ChainOf(Second)
+	local Depth = 1
+	while ChainA[Depth] and ChainA[Depth] == ChainB[Depth] do
+		Depth += 1
+	end
+	local NodeA, NodeB = ChainA[Depth], ChainB[Depth]
+	if not NodeA or not NodeB then
+		return false
+	end
+	if NodeA:IsA("ScreenGui") and NodeB:IsA("ScreenGui") and NodeA.DisplayOrder ~= NodeB.DisplayOrder then
+		return NodeA.DisplayOrder > NodeB.DisplayOrder
+	end
+	local LayerA, IndexA = OrderOf(ChainA, Depth)
+	local LayerB, IndexB = OrderOf(ChainB, Depth)
+	if LayerA ~= LayerB then
+		return LayerA > LayerB
+	end
+	return IndexA > IndexB
+end
+
+function Creator.TopSurface(Point: Vector2): GuiObject?
+	local Top: GuiObject? = nil
+	for Surface in next, Creator.Surfaces do
+		if Surface.Parent and IsShown(Surface) and RectContains(Surface, Point) then
+			if not Top or DrawsAbove(Surface, Top) then
+				Top = Surface
+			end
+		end
+	end
+	return Top
+end
+
+local function BlocksInput(Hit: GuiObject): boolean
+	if Hit.BackgroundTransparency < 0.98 then
+		return true
+	end
+	if Hit:IsA("ViewportFrame") then
+		return true
+	end
+	if Hit:IsA("ImageLabel") then
+		return Hit.Image ~= "" and Hit.ImageTransparency < 0.98
+	end
+	if Hit:IsA("TextLabel") then
+		return Hit.Text ~= "" and Hit.TextTransparency < 0.98
+	end
+	return false
+end
+
+local function IsPointerless(): boolean
+	local Last = UserInputService:GetLastInputType()
+	return Last == Enum.UserInputType.Keyboard
+		or (Last.Value >= Enum.UserInputType.Gamepad1.Value and Last.Value <= Enum.UserInputType.Gamepad8.Value)
+end
+
+function Creator.IsOccluded(Object: GuiObject, Point: Vector2?): boolean
+	if not Object.Parent or IsPointerless() then
+		return false
+	end
+
+	local Pointer = Point or Creator.GetPointer(Object)
+	local Min, Max = VisibleRect(Object)
+	if Pointer.X < Min.X - 1 or Pointer.X > Max.X + 1 or Pointer.Y < Min.Y - 1 or Pointer.Y > Max.Y + 1 then
+		return false
+	end
+
+	local Own = Creator.GetSurface(Object)
+	if Own then
+		local Top = Creator.TopSurface(Pointer)
+		if Top and Top ~= Own then
+			return true
+		end
+	end
+
+	local Gui = Object:FindFirstAncestorOfClass("ScreenGui")
+	local Container = Gui and Gui.Parent
+	if not Container or not Container:IsA("BasePlayerGui") then
+		return false
+	end
+	local Success, Hits = pcall(Container.GetGuiObjectsAtPosition, Container, Pointer.X, Pointer.Y)
+	if not Success then
+		return false
+	end
+	for _, Hit in Hits do
+		if Hit == Object or Hit:IsDescendantOf(Object) then
+			return false
+		end
+		if
+			not Hit:IsAncestorOf(Object)
+			and Creator.GetSurface(Hit) ~= Own
+			and RectContains(Hit, Pointer, 1)
+			and (Hit.Active or Hit:IsA("GuiButton") or Hit:IsA("TextBox") or BlocksInput(Hit))
+		then
+			return true
+		end
+	end
+	return false
+end
+
+function Creator.IsTopmost(Object: GuiObject, Point: Vector2?): boolean
+	local Pointer = Point or Creator.GetPointer(Object)
+	local Min, Max = VisibleRect(Object)
+	if Pointer.X < Min.X - 1 or Pointer.X > Max.X + 1 or Pointer.Y < Min.Y - 1 or Pointer.Y > Max.Y + 1 then
+		return true
+	end
+
+	local Own = Creator.GetSurface(Object)
+	if Own then
+		local Top = Creator.TopSurface(Pointer)
+		if Top and Top ~= Own then
+			return false
+		end
+	end
+
 	local Gui = Object:FindFirstAncestorOfClass("ScreenGui")
 	local Container = Gui and Gui.Parent
 	if not Container or not Container:IsA("BasePlayerGui") then
 		return true
 	end
 
-	local function Probe(Point: Vector2): boolean?
-		local Success, Hits = pcall(Container.GetGuiObjectsAtPosition, Container, Point.X, Point.Y)
-		if not Success then
+	local Success, Hits = pcall(Container.GetGuiObjectsAtPosition, Container, Pointer.X, Pointer.Y)
+	if not Success then
+		return true
+	end
+	for _, Hit in Hits do
+		if Hit == Object or Hit:IsDescendantOf(Object) then
 			return true
 		end
-		for _, Hit in Hits do
-			if Hit == Object or Hit:IsDescendantOf(Object) then
-				return true
+		if RectContains(Hit, Pointer, 1) and not Hit:IsAncestorOf(Object) then
+			if Hit.Active or Hit:IsA("GuiButton") or Hit:IsA("TextBox") then
+				return false
 			end
-			if (Hit.Active or Hit:IsA("GuiButton") or Hit:IsA("TextBox")) and not Hit:IsAncestorOf(Object) then
+			if Creator.GetSurface(Hit) ~= Own and BlocksInput(Hit) then
 				return false
 			end
 		end
-		return nil
 	end
-
-	local Mouse = UserInputService:GetMouseLocation()
-	local Result = Probe(Mouse - GuiService:GetGuiInset())
-	if Result == nil then
-		Result = Probe(Mouse)
-	end
-	return Result == true
+	return true
 end
 
-local HoverStates = setmetatable({}, { __mode = "k" })
+function Creator.AcceptsInput(Object: GuiObject, Input: InputObject?): boolean
+	return Creator.IsTopmost(Object, Creator.GetPointer(Object, Input))
+end
 
+local function RunRelease(Object: Instance)
+	local List = UpHandlers[Object]
+	if List then
+		for _, Handler in List do
+			pcall(Handler)
+		end
+	end
+	local Hover = HoverStates[Object]
+	if Hover and not Hover.Hovered and Hover.Reset then
+		Hover.Reset()
+	end
+end
+
+local function FlushPresses()
+	for Object, State in next, PressState do
+		PressState[Object] = nil
+		if not State.Released then
+			RunRelease(Object)
+		end
+	end
+end
+
+local function CancelWithin(Surface: GuiObject)
+	for Object, State in next, PressState do
+		if Object == Surface or Object:IsDescendantOf(Surface) then
+			PressState[Object] = nil
+			if not State.Released then
+				RunRelease(Object)
+			end
+		end
+	end
+	for Object in next, ActiveHovers do
+		if Object == Surface or Object:IsDescendantOf(Surface) then
+			local State = HoverStates[Object]
+			if State then
+				State.Inside = false
+				State.Reset()
+			else
+				ActiveHovers[Object] = nil
+			end
+		end
+	end
+end
+
+local function ApplySurfaceState(Surface: GuiObject)
+	local Allowed = not Creator.SurfaceLocks[Surface] and not SurfaceCovered[Surface]
+	if Surface.Interactable ~= Allowed then
+		pcall(function()
+			Surface.Interactable = Allowed
+		end)
+	end
+end
+
+function Creator.SetSurfaceLock(Surface: GuiObject, Locked: boolean)
+	Creator.SurfaceLocks[Surface] = if Locked then true else nil
+	ApplySurfaceState(Surface)
+end
+
+local function SyncCoverLoop() end
+
+local function ReleaseCovers()
+	for Surface in next, SurfaceCovered do
+		SurfaceCovered[Surface] = nil
+		ApplySurfaceState(Surface)
+	end
+	SyncCoverLoop()
+end
+
+function Creator.ArbitrateSurfaces(Input: InputObject?)
+	local Point = Creator.GetPointer(nil, Input)
+	local Top = Creator.TopSurface(Point)
+	for Surface in next, Creator.Surfaces do
+		local Covered = false
+		if Top and Top ~= Surface and not Surface:IsAncestorOf(Top) then
+			Covered = Surface.Parent ~= nil and IsShown(Surface) and RectContains(Surface, Point)
+		end
+		if (SurfaceCovered[Surface] == true) ~= Covered then
+			SurfaceCovered[Surface] = if Covered then true else nil
+			if Covered then
+				CancelWithin(Surface)
+			end
+			ApplySurfaceState(Surface)
+		end
+	end
+	SyncCoverLoop()
+end
+
+local function PurgeFrozen()
+	for Input in next, FrozenInputs do
+		if Input.UserInputState == Enum.UserInputState.End or Input.UserInputState == Enum.UserInputState.Cancel then
+			FrozenInputs[Input] = nil
+		end
+	end
+end
+
+local function StepCovers()
+	PurgeFrozen()
+	if next(FrozenInputs) then
+		return
+	end
+	if ActiveTouch == nil and not UserInputService.MouseEnabled then
+		ReleaseCovers()
+	else
+		Creator.ArbitrateSurfaces(nil)
+	end
+end
+
+function SyncCoverLoop()
+	if next(SurfaceCovered) then
+		if not CoverConnection then
+			CoverConnection = Creator.AddSignal(PreRender, StepCovers)
+		end
+	elseif CoverConnection then
+		CoverConnection:Disconnect()
+		CoverConnection = nil
+	end
+end
+
+Creator.AddSignal(UserInputService.InputBegan, function(Input)
+	local Type = Input.UserInputType
+	if Type == Enum.UserInputType.Touch then
+		ActiveTouch = Input
+		LastTouchPoint = Vector2.new(Input.Position.X, Input.Position.Y)
+		LastTouchClock = os.clock()
+	end
+	if Type == Enum.UserInputType.Touch or Type == Enum.UserInputType.MouseButton1 then
+		Creator.ArbitrateSurfaces(if Type == Enum.UserInputType.Touch then Input else nil)
+		FrozenInputs[Input] = true
+	end
+end)
+
+Creator.AddSignal(UserInputService.InputChanged, function(Input)
+	if Input.UserInputType == Enum.UserInputType.Touch then
+		LastTouchPoint = Vector2.new(Input.Position.X, Input.Position.Y)
+		LastTouchClock = os.clock()
+	end
+	PurgeFrozen()
+	if next(FrozenInputs) then
+		return
+	end
+	local Type = Input.UserInputType
+	if Type == Enum.UserInputType.MouseMovement or Type == Enum.UserInputType.MouseWheel then
+		Creator.ArbitrateSurfaces(nil)
+	elseif Type == Enum.UserInputType.Touch then
+		Creator.ArbitrateSurfaces(Input)
+	end
+end)
+
+Creator.AddSignal(UserInputService.InputEnded, function(Input)
+	if Input.UserInputType == Enum.UserInputType.Touch then
+		LastTouchPoint = Vector2.new(Input.Position.X, Input.Position.Y)
+		LastTouchClock = os.clock()
+	end
+	if Input == ActiveTouch then
+		ActiveTouch = nil
+	end
+	if Input.UserInputType == Enum.UserInputType.Touch or Input.UserInputType == Enum.UserInputType.MouseButton1 then
+		task.defer(FlushPresses)
+	end
+	if FrozenInputs[Input] then
+		FrozenInputs[Input] = nil
+		if Input.UserInputType == Enum.UserInputType.Touch then
+			ReleaseCovers()
+		else
+			Creator.ArbitrateSurfaces(nil)
+		end
+	end
+end)
+
+Creator.AddSignal(UserInputService.WindowFocusReleased, function()
+	table.clear(FrozenInputs)
+	ActiveTouch = nil
+	ReleaseCovers()
+	FlushPresses()
+end)
+
+local Scrollers = setmetatable({}, { __mode = "k" })
+
+function Creator.GuardScroller(Frame: ScrollingFrame)
+	if Scrollers[Frame] then
+		return
+	end
+	local Entry = { Held = false, Previous = true, Last = 0 }
+	Scrollers[Frame] = Entry
+
+	local function Restore()
+		if Entry.Held then
+			Entry.Held = false
+			Frame.ScrollingEnabled = Entry.Previous
+		end
+	end
+
+	local function Check(Input: InputObject, Force: boolean)
+		local Now = os.clock()
+		if not Force and Now - Entry.Last < 0.05 then
+			return
+		end
+		Entry.Last = Now
+		if Creator.AcceptsInput(Frame, Input) then
+			Restore()
+		elseif not Entry.Held then
+			Entry.Held = true
+			Entry.Previous = Frame.ScrollingEnabled
+			Frame.ScrollingEnabled = false
+		end
+	end
+
+	Creator.AddSignal(Frame.InputBegan, function(Input)
+		local Type = Input.UserInputType
+		if Type == Enum.UserInputType.Touch or Type == Enum.UserInputType.MouseButton1 then
+			Check(Input, true)
+		end
+	end)
+	Creator.AddSignal(Frame.InputChanged, function(Input)
+		local Type = Input.UserInputType
+		if Type == Enum.UserInputType.MouseWheel then
+			Check(Input, true)
+		elseif Type == Enum.UserInputType.MouseMovement or Type == Enum.UserInputType.Touch then
+			Check(Input, false)
+		end
+	end)
+	Creator.AddSignal(Frame.MouseLeave, Restore)
+	Creator.AddSignal(Frame:GetPropertyChangedSignal("Visible"), Restore)
+end
 local function GetHoverState(Object: GuiObject)
 	local State = HoverStates[Object]
 	if State then
@@ -2927,8 +5375,12 @@ local function GetHoverState(Object: GuiObject)
 		Leave = {},
 		Inside = false,
 		Hovered = false,
+		Input = nil,
 		Last = 0,
-		Token = 0,
+		EnterToken = 0,
+		LeaveToken = 0,
+		PollToken = 0,
+		Strikes = 0,
 		X = 0,
 		Y = 0,
 	}
@@ -2940,25 +5392,81 @@ local function GetHoverState(Object: GuiObject)
 		end
 	end
 
-	local function Evaluate()
-		local Want = State.Inside and Creator.IsTopmost(Object)
-		if Want == State.Hovered then
-			return
-		end
-		State.Hovered = Want
-		if not Want then
+	local function Drop()
+		State.PollToken += 1
+		State.EnterToken += 1
+		State.LeaveToken += 1
+		State.Strikes = 0
+		ActiveHovers[Object] = nil
+		if State.Hovered then
+			State.Hovered = false
 			Fire(State.Leave)
+		end
+	end
+
+	function State.Reset()
+		State.PollToken += 1
+		State.EnterToken += 1
+		State.LeaveToken += 1
+		State.Strikes = 0
+		ActiveHovers[Object] = nil
+		State.Hovered = false
+		Fire(State.Leave)
+	end
+
+	local function Covered(): boolean
+		return not Creator.IsTopmost(Object, Creator.GetPointer(Object, State.Input))
+	end
+
+	local function Poll()
+		State.PollToken += 1
+		local Token = State.PollToken
+		task.spawn(function()
+			while State.Hovered and State.PollToken == Token do
+				task.wait(HoverPollInterval)
+				if not State.Hovered or State.PollToken ~= Token then
+					return
+				end
+				if not Object.Parent or not IsShown(Object) or not PointerInside(Object, State.Input) then
+					Drop()
+					return
+				end
+				if Covered() then
+					State.Strikes += 1
+					if State.Strikes >= HoverCoverStrikes then
+						Drop()
+						return
+					end
+				else
+					State.Strikes = 0
+				end
+			end
+		end)
+	end
+
+	local function Confirm()
+		if State.Hovered or not State.Inside then
 			return
 		end
+		if not IsShown(Object) or not PointerInside(Object, State.Input) or Covered() then
+			return
+		end
+		State.Hovered = true
+		State.Strikes = 0
+		ActiveHovers[Object] = Drop
 		Fire(State.Enter)
-		State.Token += 1
-		local Token = State.Token
-		task.spawn(function()
-			while State.Hovered and State.Token == Token and Object.Parent do
-				task.wait(0.1)
-				if State.Hovered and State.Token == Token then
-					Evaluate()
-				end
+		Poll()
+	end
+
+	local function Request()
+		if State.Hovered then
+			return
+		end
+		State.EnterToken += 1
+		local Token = State.EnterToken
+		task.delay(HoverEnterDelay, function()
+			if State.EnterToken == Token then
+				Confirm()
 			end
 		end)
 	end
@@ -2966,37 +5474,134 @@ local function GetHoverState(Object: GuiObject)
 	Creator.AddSignal(Object.MouseEnter, function(X, Y)
 		State.Inside = true
 		State.X, State.Y = X, Y
-		Evaluate()
+		State.LeaveToken += 1
+		Request()
 	end)
 
 	Creator.AddSignal(Object.MouseLeave, function(X, Y)
 		State.Inside = false
-		State.Hovered = false
-		State.Token += 1
 		State.X, State.Y = X, Y
-		Fire(State.Leave)
+		State.EnterToken += 1
+		if not State.Hovered then
+			return
+		end
+		State.LeaveToken += 1
+		local Token = State.LeaveToken
+		task.delay(HoverLeaveDelay, function()
+			if State.LeaveToken ~= Token or State.Inside or not State.Hovered then
+				return
+			end
+			if Object.Parent and IsShown(Object) and PointerInside(Object, State.Input) and not Covered() then
+				State.Inside = true
+				return
+			end
+			Drop()
+		end)
 	end)
 
 	Creator.AddSignal(Object.MouseMoved, function(X, Y)
+		State.X, State.Y = X, Y
+		if State.Hovered then
+			return
+		end
 		local Now = os.clock()
 		if Now - State.Last < 0.04 then
 			return
 		end
 		State.Last = Now
-		State.X, State.Y = X, Y
 		State.Inside = true
-		Evaluate()
+		Request()
+	end)
+
+	Creator.AddSignal(Object.InputBegan, function(Input)
+		if
+			Input.UserInputType == Enum.UserInputType.Touch
+			or Input.UserInputType == Enum.UserInputType.MouseMovement
+		then
+			State.Input = Input
+		end
+	end)
+
+	Creator.AddSignal(Object.InputEnded, function(Input)
+		if Input.UserInputType == Enum.UserInputType.Touch and Input == State.Input then
+			State.Inside = false
+			Drop()
+		end
 	end)
 
 	return State
 end
 
+Creator.AddSignal(UserInputService.InputEnded, function(Input)
+	if Input.UserInputType ~= Enum.UserInputType.Touch then
+		return
+	end
+	for Object, Drop in next, ActiveHovers do
+		local State = HoverStates[Object]
+		if State and State.Input == Input then
+			State.Inside = false
+			Drop()
+		end
+	end
+end)
+
+Creator.AddSignal(UserInputService.WindowFocusReleased, function()
+	for Object, Drop in next, ActiveHovers do
+		local State = HoverStates[Object]
+		if State then
+			State.Inside = false
+		end
+		Drop()
+	end
+end)
 function Creator.OnHoverEnter(Object: GuiObject, Callback: (...any) -> ())
 	table.insert(GetHoverState(Object).Enter, Callback)
 end
 
 function Creator.OnHoverLeave(Object: GuiObject, Callback: (...any) -> ())
 	table.insert(GetHoverState(Object).Leave, Callback)
+end
+
+function Creator.AddGuarded(Object: GuiButton, Event: string, Callback: (...any) -> ()): RBXScriptConnection
+	local Signal = (Object :: any)[Event]
+	if Event == "MouseButton1Down" then
+		return Creator.AddSignal(Signal, function(...)
+			local Args = table.pack(...)
+			task.defer(function()
+				if not Object.Parent or not Creator.AcceptsInput(Object) then
+					return
+				end
+				PressState[Object] = { Released = false }
+				Callback(table.unpack(Args, 1, Args.n))
+			end)
+		end)
+	elseif Event == "MouseButton1Up" then
+		local List = UpHandlers[Object]
+		if not List then
+			List = {}
+			UpHandlers[Object] = List
+			Object.Destroying:Connect(function()
+				UpHandlers[Object] = nil
+				PressState[Object] = nil
+			end)
+		end
+		table.insert(List, Callback)
+		return Creator.AddSignal(Signal, function(...)
+			local State = PressState[Object]
+			if State then
+				State.Released = true
+			elseif Creator.IsOccluded(Object) then
+				return
+			end
+			Callback(...)
+		end)
+	end
+	return Creator.AddSignal(Signal, function(...)
+		if Creator.IsOccluded(Object) then
+			return
+		end
+		Callback(...)
+	end)
 end
 
 function Creator.Disconnect()
@@ -3080,8 +5685,8 @@ local function ApplyProperty(Object: any, Property: string, Value: any)
 	end
 end
 
-local function ApplyTheme(Object: Instance, Properties: ThemeTag)
-	local Theme = ThemeResolver.Resolve(Library.Theme, Library.ThemeMode)
+local function ApplyTheme(Object: Instance, Properties: ThemeTag, ResolvedTheme: any?)
+	local Theme = ResolvedTheme or ThemeResolver.Resolve(Library.Theme, Library.ThemeMode)
 	local Fallback = Themes.Dark
 	for Property, ThemeKey in Properties do
 		local Value = Theme and Theme[ThemeKey]
@@ -3119,6 +5724,8 @@ function Creator.UpdateTheme(OnDone: (() -> ())?)
 		end
 	end
 
+	local ActiveTheme = ThemeResolver.Resolve(Library.Theme, Library.ThemeMode)
+
 	local Pending, Count = {}, 0
 	for Object in Creator.Registry do
 		Count += 1
@@ -3134,7 +5741,7 @@ function Creator.UpdateTheme(OnDone: (() -> ())?)
 			local Data = Creator.Registry[Object]
 			if Data and Data.Stamp ~= Stamp then
 				Data.Stamp = Stamp
-				pcall(ApplyTheme, Object, Data.Properties)
+				pcall(ApplyTheme, Object, Data.Properties, ActiveTheme)
 			end
 			if Index % 24 == 0 and os.clock() > Deadline then
 				return false
@@ -3147,7 +5754,7 @@ function Creator.UpdateTheme(OnDone: (() -> ())?)
 		for Object, Data in Creator.Registry do
 			if Data.Stamp ~= ThemeStamp then
 				Data.Stamp = ThemeStamp
-				pcall(ApplyTheme, Object, Data.Properties)
+				pcall(ApplyTheme, Object, Data.Properties, ActiveTheme)
 			end
 		end
 		if Library.ThemeChanged then
@@ -3167,7 +5774,7 @@ function Creator.UpdateTheme(OnDone: (() -> ())?)
 
 	task.spawn(function()
 		repeat
-			RunService.Heartbeat:Wait()
+			Heartbeat:Wait()
 			if Run ~= ThemeRun then
 				return
 			end
@@ -3252,6 +5859,20 @@ function Creator.RegisterAlias(alias: string, className: string)
 end
 
 function Creator.New(className: string, properties: Props?, children: { Instance }?): any
+	if className == "UiBlur" then
+		local Blur = UiBlur.new()
+		if properties then
+			local Clean = {}
+			for Name, Value in properties do
+				if Name ~= "ThemeTag" and Name ~= "Name" then
+					Clean[Name] = Value
+				end
+			end
+			Blur:Set(Clean)
+		end
+		return Blur
+	end
+
 	local resolved = Creator.ClassAliases[className] or className
 
 	local ok, object = pcall(Instance.new, resolved)
@@ -3265,7 +5886,9 @@ function Creator.New(className: string, properties: Props?, children: { Instance
 	local defaults = Creator.DefaultProperties[resolved]
 	if defaults then
 		for name, value in defaults do
-			instance[name] = value
+			if properties == nil or properties[name] == nil then
+				instance[name] = value
+			end
 		end
 	end
 
@@ -3302,6 +5925,10 @@ function Creator.New(className: string, properties: Props?, children: { Instance
 
 	if themeTag then
 		Creator.AddThemeObject(instance, themeTag)
+	end
+
+	if resolved == "ScrollingFrame" then
+		Creator.GuardScroller(instance)
 	end
 
 	if parent then
@@ -3464,11 +6091,21 @@ local function MarqueeOffset(Entry: any): number
 end
 
 local function MarqueeStep(DeltaTime: number)
+	local HasActive = false
 	for Label, Entry in MarqueeActive do
+		HasActive = true
 		if Label:IsDescendantOf(game) then
 			Entry.Time += DeltaTime
-			Entry.Text.Position = UDim2.fromOffset(-math.floor(MarqueeOffset(Entry)), 0)
+			local Offset = -math.floor(MarqueeOffset(Entry))
+			if Entry.AppliedOffset ~= Offset then
+				Entry.AppliedOffset = Offset
+				Entry.Text.Position = UDim2.fromOffset(Offset, 0)
+			end
 		end
+	end
+	if not HasActive and MarqueeConnection then
+		MarqueeConnection:Disconnect()
+		MarqueeConnection = nil
 	end
 end
 
@@ -3537,7 +6174,7 @@ local function MarqueeSet(Entry: any, Overflow: boolean, Full: number, Width: nu
 		end
 		MarqueeSync(Entry)
 		if not (MarqueeConnection and MarqueeConnection.Connected) then
-			MarqueeConnection = Creator.AddSignal(RunService.Heartbeat, MarqueeStep)
+			MarqueeConnection = Creator.AddSignal(Heartbeat, MarqueeStep)
 		end
 	elseif Entry.Active then
 		Entry.Active = false
@@ -3755,6 +6392,10 @@ function Creator.BindDrag(Target, OnDrag, OnEnd, Options)
 				return
 			end
 
+			if not Creator.AcceptsInput(Target, Input) then
+				return
+			end
+
 			Owner.Input = Input
 			Creator.ActiveDrag = Owner
 			ActiveInput = Input
@@ -3837,6 +6478,276 @@ Library.ConfigChanged = Signal.new()
 Library.Flipper = Flipper
 Library.Signal = Signal
 Library.Layers = {}
+Library.UiBlur = UiBlur
+Library.BlurEnabled = true
+Library.BlurFailures = 0
+Library.BlurArea = New("Frame", {
+	Name = "BlurArea",
+	Size = UDim2.fromScale(1, 1),
+	BackgroundTransparency = 1,
+	Active = false,
+	ZIndex = 0,
+	Parent = GUI,
+})
+
+Library.ActiveBlurs = 0
+
+local function RegionShown(Object: GuiObject): boolean
+	local Current: Instance? = Object
+	while Current do
+		if Current:IsA("GuiObject") and not Current.Visible then
+			return false
+		end
+		if Current:IsA("ScreenGui") then
+			return Current.Enabled and Object.AbsoluteSize.X >= 1 and Object.AbsoluteSize.Y >= 1
+		end
+		Current = Current.Parent
+	end
+	return false
+end
+
+Library.FollowingBlurs = 0
+
+local function FollowBlur(State: any, Following: boolean, Duration: number)
+	if (State.Following == true) == Following then
+		return
+	end
+	State.Following = Following
+	Library.FollowingBlurs = math.max(Library.FollowingBlurs + (if Following then 1 else -1), 0)
+	local Background = Library.Background
+	if Background and Background.FollowDialog then
+		Background:FollowDialog(Library.FollowingBlurs > 0, Duration)
+	end
+end
+
+local function CountBlur(State: any, Counted: boolean)
+	if (State.Counted == true) == Counted then
+		return
+	end
+	State.Counted = Counted
+	Library.ActiveBlurs = math.max(Library.ActiveBlurs + (if Counted then 1 else -1), 0)
+	local Background = Library.Background
+	if Background and Background.SetDialogActive then
+		Background:SetDialogActive(Library.ActiveBlurs > 0)
+	end
+end
+
+function Library:CaptureBlur(Blur: any?, Done: (any?) -> (), Options: { [string]: any }?)
+	local Region = Options and Options.Region
+	if not Blur or not Region or not self.BlurEnabled or self.BlurFailures >= 2 then
+		Done(nil)
+		return
+	end
+
+	local State = Blur.State
+	State.CaptureId = (State.CaptureId or 0) + 1
+	State.Released = false
+	local Id = State.CaptureId
+
+	Done(nil)
+	CountBlur(State, true)
+
+	task.defer(function()
+		local function Stale()
+			return not State.Alive or State.Released or State.CaptureId ~= Id
+		end
+		if Stale() then
+			return
+		end
+		local Shown = RegionShown(Region)
+		local Settle = 0
+		while not Stale() and not Shown and Settle < 10 do
+			Settle += task.wait(0.1)
+			Shown = RegionShown(Region)
+		end
+		if Stale() then
+			return
+		end
+		local Source = if Shown then UiBlur.Rasterize(Region, Options) else nil
+		if Source and not Stale() and not RegionShown(Region) then
+			Source:Destroy()
+			Source = nil
+			while not Stale() and not RegionShown(Region) and Settle < 10 do
+				Settle += task.wait(0.1)
+			end
+			if not Stale() and RegionShown(Region) then
+				Source = UiBlur.Rasterize(Region, Options)
+			end
+		end
+		if Stale() then
+			if Source then
+				Source:Destroy()
+			end
+			return
+		end
+		if not Source then
+			self.BlurFailures += 1
+			CountBlur(State, false)
+			return
+		end
+		self.BlurFailures = 0
+		local Previous = State.OwnedSource
+		State.OwnedSource = Source
+		Blur.Backdrop = Source
+		if Previous and Previous ~= Source then
+			Previous:Destroy()
+		end
+		local Waited = 0
+		while not Stale() and not Blur:IsReady() and Waited < 2 do
+			Waited += task.wait()
+		end
+		if not Stale() then
+			CountBlur(State, true)
+			Blur:Tween({ Opacity = 1 }, 0.18)
+			FollowBlur(State, true, 0.18)
+		end
+
+		local Exclude = Options and Options.Exclude
+		local Last = UiBlur.Signature(Region, Exclude)
+		while not Stale() do
+			task.wait(0.3)
+			if Stale() or not Region.Parent then
+				break
+			end
+			if not RegionShown(Region) then
+				continue
+			end
+			local Now = UiBlur.Signature(Region, Exclude)
+			if Now ~= Last then
+				task.wait(0.25)
+				if Stale() or not RegionShown(Region) then
+					continue
+				end
+				local Again = UiBlur.Signature(Region, Exclude)
+				if Again ~= Now then
+					continue
+				end
+				Last = Now
+				local Fresh = UiBlur.Rasterize(Region, Options)
+				if Stale() then
+					if Fresh then
+						Fresh:Destroy()
+					end
+					break
+				end
+				if Fresh and not RegionShown(Region) then
+					Fresh:Destroy()
+					Fresh = nil
+					Last = -1
+				end
+				if Fresh then
+					local Old = State.OwnedSource
+					State.OwnedSource = Fresh
+					Blur.Backdrop = Fresh
+					if Old and Old ~= Fresh then
+						Old:Destroy()
+					end
+				end
+			end
+		end
+	end)
+end
+
+function Library:ReleaseBlur(Blur: any?, Source: any?, Keep: boolean?)
+	local State = Blur and Blur.State
+	local Owned = nil
+	if State then
+		State.Released = true
+		State.CaptureId = (State.CaptureId or 0) + 1
+		Owned = State.OwnedSource
+		State.OwnedSource = nil
+		local ReleaseId = State.CaptureId
+		task.delay(0.25, function()
+			if State.CaptureId == ReleaseId then
+				CountBlur(State, false)
+			end
+		end)
+	end
+	if Blur then
+		Blur:Tween({ Opacity = 0 }, 0.15)
+	end
+	if State then
+		FollowBlur(State, false, 0.15)
+	end
+	task.delay(0.3, function()
+		if Blur and not Keep then
+			Blur:Destroy()
+		end
+		if Source then
+			Source:Destroy()
+		end
+		if Owned then
+			Owned:Destroy()
+		end
+	end)
+end
+
+function Library:BlurScreen(Config: { [string]: any }?): any
+	local Settings = Config or {}
+	local Holder = New("Frame", {
+		Name = "ScreenBlur",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundTransparency = 1,
+		Active = Settings.Block == true,
+		ZIndex = Settings.ZIndex or 1,
+		Visible = false,
+		Parent = self.GUI,
+	})
+	local Blur = New("UiBlur", {
+		Parent = Holder,
+		Blur = Settings.Blur or 8,
+		Brightness = Settings.Brightness or 0.9,
+		Saturate = Settings.Saturate or 1.1,
+		Tint = Settings.Tint or Color3.new(0, 0, 0),
+		TintTransparency = Settings.TintTransparency or 0.7,
+		Opacity = 0,
+	})
+	local Object = { Holder = Holder, Blur = Blur, Shown = false, Source = nil :: any }
+
+	function Object:Show()
+		if Object.Shown then
+			return
+		end
+		Object.Shown = true
+		Holder.Visible = true
+		Library:CaptureBlur(Blur, function(Source)
+			if not Object.Shown then
+				Library:ReleaseBlur(Blur, Source, true)
+				return
+			end
+			Object.Source = Source
+		end, {
+			Region = Library.BlurArea,
+			Walk = Library.GUI,
+			Exclude = { [Holder] = true, [Library.BlurArea] = true },
+			BaseColor = Settings.BaseColor,
+		})
+	end
+
+	function Object:Hide()
+		if not Object.Shown then
+			return
+		end
+		Object.Shown = false
+		Library:ReleaseBlur(Blur, Object.Source, true)
+		Object.Source = nil
+		task.delay(0.3, function()
+			if not Object.Shown then
+				Holder.Visible = false
+			end
+		end)
+	end
+
+	function Object:Destroy()
+		Object:Hide()
+		task.delay(0.4, function()
+			Blur:Destroy()
+			Holder:Destroy()
+		end)
+	end
+
+	return Object
+end
 Library.Events = {
 	WindowCreated = Signal.new(),
 	TabAdded = Signal.new(),
@@ -3935,7 +6846,7 @@ function Library:SafeCallback(Function, ...)
 
 	local _, Index = Message:find(":%d+: ")
 
-	return Library:Notify({
+	return Library:InternalNotify({
 		Title = "Interface",
 		Content = "Callback error",
 		SubContent = Index and Message:sub(Index + 1) or Message,
@@ -3982,6 +6893,7 @@ local function Resolve(Icon, Context, Config)
 	return nil
 end
 
+-- Lucide or something o Algo 
 local Icons = {
 	["lucide-accessibility"] = "rbxassetid://10709751939",
 	["lucide-activity"] = "rbxassetid://10709752035",
@@ -4842,7 +7754,7 @@ do
 
 	local AllowedPrefixes: { string } = {
 		"https://raw.githubusercontent.com/StyearX/Icons/",
-		"https://raw.githubusercontent.com/AlexanderTheWorst/Gloam/",
+		"https://raw.githubusercontent.com/AlexanderTheWorst/Gloam/", -- this dude is stupid nigger he should kill himself
 	}
 	local DefaultPack = "lucide"
 	local DefaultMaterialSize = "36"
@@ -5932,7 +8844,8 @@ function Library.CreateItemHover(Target: GuiButton, Config: { [string]: any }?)
 
 	local Layer = New("Frame", {
 		Name = "ItemHover",
-		Size = UDim2.fromScale(1, 1),
+		Position = UDim2.fromOffset(Config.InsetX or 0, Config.InsetY or 0),
+		Size = UDim2.new(1, -2 * (Config.InsetX or 0), 1, -2 * (Config.InsetY or 0)),
 		BackgroundTransparency = 1,
 		ZIndex = math.max(Target.ZIndex - 1, 0),
 		Parent = Target,
@@ -5968,16 +8881,19 @@ function Library.CreateItemHover(Target: GuiButton, Config: { [string]: any }?)
 		}),
 	})
 
-	local function Apply()
+	local LastFill
+	local LastRing
+	local LastBar
+
+	local function Apply(Force)
 		local Style = Library.HoverStyle
 		local Active = Hovered or Pressed
 		local FillGoal = 1
 		local RingGoal = 1
 		local BarGoal = 0
-		local FillValue = Creator.GetThemeProperty(if Pressed then "PressedTransparency" else "HoverTransparency")
 		if Style == "Full" then
 			if Active then
-				FillGoal = FillValue
+				FillGoal = Creator.GetThemeProperty(if Pressed then "PressedTransparency" else "HoverTransparency")
 			end
 		elseif Style == "Border" then
 			if Active then
@@ -5985,22 +8901,33 @@ function Library.CreateItemHover(Target: GuiButton, Config: { [string]: any }?)
 			end
 		elseif Style == "Accent" then
 			if Active then
-				FillGoal = FillValue
+				FillGoal = Creator.GetThemeProperty(if Pressed then "PressedTransparency" else "HoverTransparency")
 				BarGoal = if Pressed then 0.7 else 1
 			end
 		elseif Pressed then
-			FillGoal = FillValue
+			FillGoal = Creator.GetThemeProperty("PressedTransparency")
 		end
 		local Duration = if Library.Config.ReducedMotion then 0 elseif Style == "Click" and not Pressed then 0.35 else 0.12
-		Creator.Tween(Layer, Duration, { BackgroundTransparency = FillGoal })
-		Creator.Tween(Ring, Duration, { Transparency = RingGoal })
-		Creator.Tween(Bar, Duration, {
-			BackgroundTransparency = 1 - BarGoal,
-			Size = UDim2.new(0, 3, 0.2 + 0.38 * BarGoal, 0),
-		})
+		if Force or LastFill ~= FillGoal then
+			LastFill = FillGoal
+			Creator.Tween(Layer, Duration, { BackgroundTransparency = FillGoal })
+		end
+		if Force or LastRing ~= RingGoal then
+			LastRing = RingGoal
+			Creator.Tween(Ring, Duration, { Transparency = RingGoal })
+		end
+		if Force or LastBar ~= BarGoal then
+			LastBar = BarGoal
+			Creator.Tween(Bar, Duration, {
+				BackgroundTransparency = 1 - BarGoal,
+				Size = UDim2.new(0, 3, 0.2 + 0.38 * BarGoal, 0),
+			})
+		end
 	end
 
-	Library.ItemHovers[Layer] = Apply
+	Library.ItemHovers[Layer] = function()
+		Apply(true)
+	end
 	Creator.AddSignal(Layer.Destroying, function()
 		Library.ItemHovers[Layer] = nil
 	end)
@@ -6013,13 +8940,25 @@ function Library.CreateItemHover(Target: GuiButton, Config: { [string]: any }?)
 		Pressed = false
 		Apply()
 	end)
-	Creator.AddSignal(Target.MouseButton1Down, function()
+	Creator.AddGuarded(Target, "MouseButton1Down", function()
+		if not Creator.AcceptsInput(Target) then
+			return
+		end
 		Pressed = true
 		Apply()
 	end)
-	Creator.AddSignal(Target.MouseButton1Up, function()
+	Creator.AddGuarded(Target, "MouseButton1Up", function()
 		Pressed = false
 		Apply()
+	end)
+	Creator.AddSignal(UserInputService.InputEnded, function(Input)
+		if
+			Pressed
+			and (Input.UserInputType == Enum.UserInputType.MouseButton1 or Input.UserInputType == Enum.UserInputType.Touch)
+		then
+			Pressed = false
+			Apply()
+		end
 	end)
 
 	return Layer
@@ -6154,12 +9093,15 @@ local function BindHover(Button, Hover)
 		end
 	end)
 	Creator.OnHoverLeave(Button, Hover.Leave)
-	Creator.AddSignal(Button.MouseButton1Down, function(...)
+	Creator.AddGuarded(Button, "MouseButton1Down", function(...)
+		if not Creator.AcceptsInput(Button) then
+			return
+		end
 		if not Library.InputLocked then
 			Hover.Down(...)
 		end
 	end)
-	Creator.AddSignal(Button.MouseButton1Up, Hover.Up)
+	Creator.AddGuarded(Button, "MouseButton1Up", Hover.Up)
 end
 
 local Acrylic = {
@@ -6330,6 +9272,20 @@ do
 			end)
 		)
 
+		local PartList = table.create(BandCount * 2 + 1)
+		local FrameList = table.create(BandCount * 2 + 1)
+		PartList[1] = Model
+		for Index = 1, BandCount * 2 do
+			PartList[Index + 1] = Bands[Index]
+		end
+		local LastWidth: number? = nil
+		local LastHeight: number? = nil
+		local LastRadius: number? = nil
+
+		local function IsSame(Previous: number?, Current: number): boolean
+			return Previous ~= nil and math.abs(Previous - Current) <= math.abs(Previous) * 0.000001
+		end
+
 		local function Origin(): Vector2
 			if typeof(Library.AcrylicOffset) == "Vector2" then
 				return Library.AcrylicOffset
@@ -6367,21 +9323,31 @@ do
 			local Radius = math.min(Blur.Radius * (Width / math.max(Size.X, 1)), Width / 2, Height / 2)
 			local BandHeight = Radius / BandCount
 
-			Model.CFrame = Basis
-			Mesh.Scale = Vector3.new(Width, math.max(Height - Radius * 2, 0), 0)
+			local ScaleChanged = not (IsSame(LastWidth, Width) and IsSame(LastHeight, Height) and IsSame(LastRadius, Radius))
+			if ScaleChanged then
+				LastWidth, LastHeight, LastRadius = Width, Height, Radius
+				Mesh.Scale = Vector3.new(Width, math.max(Height - Radius * 2, 0), 0)
+			end
 
+			FrameList[1] = Basis
 			for Index = 1, BandCount do
-				local Inset = Radius - math.sqrt(math.max(Radius * Radius - (Radius * Depth(Index)) ^ 2, 0))
-				local BandWidth = math.max(Width - Inset * 2, 0)
 				local Offset = Height / 2 - (Index - 0.5) * BandHeight
+				FrameList[Index + 1] = Basis * CFrame.new(0, Offset, 0)
+				FrameList[BandCount + Index + 1] = Basis * CFrame.new(0, -Offset, 0)
 
-				local Top = Bands[Index]
-				Top.CFrame = Basis * CFrame.new(0, Offset, 0)
-				BandMeshes[Index].Scale = Vector3.new(BandWidth, BandHeight, 0)
+				if ScaleChanged then
+					local Inset = Radius - math.sqrt(math.max(Radius * Radius - (Radius * Depth(Index)) ^ 2, 0))
+					local BandScale = Vector3.new(math.max(Width - Inset * 2, 0), BandHeight, 0)
+					BandMeshes[Index].Scale = BandScale
+					BandMeshes[BandCount + Index].Scale = BandScale
+				end
+			end
 
-				local Bottom = Bands[BandCount + Index]
-				Bottom.CFrame = Basis * CFrame.new(0, -Offset, 0)
-				BandMeshes[BandCount + Index].Scale = Vector3.new(BandWidth, BandHeight, 0)
+			local Moved = pcall(Workspace.BulkMoveTo, Workspace, PartList, FrameList, Enum.BulkMoveMode.FireCFrameChanged)
+			if not Moved then
+				for Index, Part in PartList do
+					Part.CFrame = FrameList[Index]
+				end
 			end
 		end
 
@@ -6555,7 +9521,9 @@ Components.Chip = (function()
 
 	return function(Text, Variant, Parent)
 		local Spec = Variants[Variant or ""]
-		local Chip = {}
+		local Chip = {
+			ClassType = "Display",
+		}
 
 		Chip.Label = New("TextLabel", {
 			FontFace = Fonts.SemiBold,
@@ -6629,6 +9597,7 @@ Components.Tag = (function()
 		end
 
 		local Tag = {
+			ClassType = "Display",
 			Style = Config.Style or "Text",
 			Variant = Config.Variant or "Default",
 		}
@@ -6799,6 +9768,7 @@ Components.Button = (function()
 		Config = Config or {}
 		local Spec = Variants[Config.Variant or "Tonal"] or Variants.Tonal
 		local Button = {
+			ClassType = "Action",
 			Spec = Spec,
 		}
 
@@ -6876,10 +9846,13 @@ Components.Button = (function()
 			Set(Spec.Base)
 			Text(Spec.Text)
 		end)
-		Creator.AddSignal(Button.Frame.MouseButton1Down, function()
+		Creator.AddGuarded(Button.Frame, "MouseButton1Down", function()
+			if not Creator.AcceptsInput(Button.Frame) then
+				return
+			end
 			Set(Spec.Press)
 		end)
-		Creator.AddSignal(Button.Frame.MouseButton1Up, function()
+		Creator.AddGuarded(Button.Frame, "MouseButton1Up", function()
 			Set(Spec.Hover)
 		end)
 
@@ -6899,7 +9872,9 @@ Components.IconButton = (function()
 		local Size = Sizes[Config.Size or "Md"] or 30
 		local Tonal = Config.Tonal
 		local Danger = Config.Danger
-		local Button = {}
+		local Button = {
+			ClassType = "Action",
+		}
 
 		Button.Icon = New("ImageLabel", {
 			Image = Resolve(Config.Icon, "Button", Config) or "",
@@ -6961,10 +9936,13 @@ Components.IconButton = (function()
 				Creator.OverrideTag(Button.Icon, { ImageColor3 = "TextSecondary" })
 			end
 		end)
-		Creator.AddSignal(Button.Frame.MouseButton1Down, function()
+		Creator.AddGuarded(Button.Frame, "MouseButton1Down", function()
+			if not Creator.AcceptsInput(Button.Frame) then
+				return
+			end
 			Set(Tonal and 0.8 or Creator.GetThemeProperty("PressedTransparency"))
 		end)
-		Creator.AddSignal(Button.Frame.MouseButton1Up, function()
+		Creator.AddGuarded(Button.Frame, "MouseButton1Up", function()
 			Set(Tonal and 0.84 or Creator.GetThemeProperty("HoverTransparency"))
 		end)
 
@@ -7042,6 +10020,7 @@ Components.Textbox = (function()
 	return function(Parent, Variant)
 		local Spec = Specs[Variant or "Field"] or Specs.Field
 		local Textbox = {
+			ClassType = "Input",
 			Spec = Spec,
 		}
 
@@ -7143,7 +10122,7 @@ Components.Textbox = (function()
 				}),
 			})
 
-			Creator.AddSignal(Textbox.Clear.MouseButton1Click, function()
+			Creator.AddGuarded(Textbox.Clear, "MouseButton1Click", function()
 				Textbox.Input.Text = ""
 				Textbox.Input:CaptureFocus()
 			end)
@@ -7581,6 +10560,7 @@ Components.Section = (function()
 			Pending = false,
 			Title = Title or "",
 			Type = "Section",
+			ClassType = "Layout",
 			IconSize = Config.IconSize or 14,
 			Depth = Config.Depth,
 			Accordion = Config.Accordion == true,
@@ -7735,7 +10715,7 @@ Components.Section = (function()
 			self:QueueRefresh()
 		end)
 
-		Creator.AddSignal(self.Trigger.MouseButton1Click, function()
+		Creator.AddGuarded(self.Trigger, "MouseButton1Click", function()
 			self:ToggleCollapsed()
 		end)
 		Creator.OnHoverEnter(self.Trigger, function()
@@ -8683,7 +11663,10 @@ Components.Element = (function()
 				self.ClearHover()
 				self:SleepHover()
 			end)
-			Creator.AddSignal(self.Body.MouseButton1Down, function()
+			Creator.AddGuarded(self.Body, "MouseButton1Down", function()
+				if not Creator.AcceptsInput(self.Body) then
+					return
+				end
 				self.Pressed = true
 				self:WakeHover()
 				if Library.HoverStyle == "Click" and not IsBlocked() and not Library.InputLocked then
@@ -8691,7 +11674,7 @@ Components.Element = (function()
 				end
 				Settle(true)
 			end)
-			Creator.AddSignal(self.Body.MouseButton1Up, function()
+			Creator.AddGuarded(self.Body, "MouseButton1Up", function()
 				self.Pressed = false
 				Settle(false)
 			end)
@@ -8704,10 +11687,10 @@ Components.Element = (function()
 			end)
 		end
 
-		Creator.AddSignal(self.Shield.MouseButton1Click, function()
+		Creator.AddGuarded(self.Shield, "MouseButton1Click", function()
 			local Reason = self:GetLockReason()
 			if Reason then
-				Library:Toast({ Text = Reason, Type = "Warning", Id = "Lock:" .. self.Id })
+				Library:InternalToast({ Text = Reason, Type = "Warning", Id = "Lock:" .. self.Id })
 			end
 		end)
 
@@ -8732,6 +11715,7 @@ Components.TitleBar = (function()
 	local function BarButton(Icon, Callback, Tinted)
 		Tinted = Tinted ~= false
 		local Button = {
+			ClassType = "Action",
 			Callback = Callback or function() end,
 			Toggled = false,
 			Hovering = false,
@@ -8780,13 +11764,16 @@ Components.TitleBar = (function()
 			Button.Hovering = false
 			Settle()
 		end)
-		AddSignal(Button.Frame.MouseButton1Down, function()
+		Creator.AddGuarded(Button.Frame, "MouseButton1Down", function()
+			if not Creator.AcceptsInput(Button.Frame) then
+				return
+			end
 			SetTransparency(Creator.GetThemeProperty("PressedTransparency"), true)
 		end)
-		AddSignal(Button.Frame.MouseButton1Up, function()
+		Creator.AddGuarded(Button.Frame, "MouseButton1Up", function()
 			SetTransparency(Creator.GetThemeProperty("HoverTransparency"), true)
 		end)
-		AddSignal(Button.Frame.MouseButton1Click, function()
+		Creator.AddGuarded(Button.Frame, "MouseButton1Click", function()
 			Button.Callback()
 		end)
 
@@ -8979,18 +11966,18 @@ Components.TitleBar = (function()
 
 		TitleBar.CloseButton = BarButton(Assets.Close, function()
 			Library.Window:Dialog({
-				Title = "Close",
-				Content = "Are you sure you want to unload the interface?",
+				Title = "Delete Window",
+				Content = "Are you sure you want to delete this window? The interface will be unloaded.",
 				Buttons = {
 					{
-						Title = "Yes",
+						Title = "Yes, Delete Window",
 						Variant = "Danger",
 						Callback = function()
 							Library:Destroy()
 						end,
 					},
 					{
-						Title = "No",
+						Title = "No, Keep Window",
 					},
 				},
 			})
@@ -9065,13 +12052,16 @@ Components.TitleBar = (function()
 			Creator.OnHoverLeave(Light, function()
 				ShowGlyphs(false)
 			end)
-			Creator.AddSignal(Light.MouseButton1Down, function()
+			Creator.AddGuarded(Light, "MouseButton1Down", function()
+				if not Creator.AcceptsInput(Light) then
+					return
+				end
 				Light.BackgroundColor3 = Spec.Fill:Lerp(Color3.new(0, 0, 0), 0.2)
 			end)
-			Creator.AddSignal(Light.MouseButton1Up, function()
+			Creator.AddGuarded(Light, "MouseButton1Up", function()
 				Light.BackgroundColor3 = Spec.Fill
 			end)
-			Creator.AddSignal(Light.MouseButton1Click, function()
+			Creator.AddGuarded(Light, "MouseButton1Click", function()
 				Spec.Button.Callback()
 			end)
 		end
@@ -9149,13 +12139,16 @@ Components.TitleBar = (function()
 			Creator.OnHoverLeave(Action.Light, function()
 				ShowGlyphs(false)
 			end)
-			Creator.AddSignal(Action.Light.MouseButton1Down, function()
+			Creator.AddGuarded(Action.Light, "MouseButton1Down", function()
+				if not Creator.AcceptsInput(Action.Light) then
+					return
+				end
 				Action.Light.BackgroundColor3 = Fill:Lerp(Color3.new(0, 0, 0), 0.2)
 			end)
-			Creator.AddSignal(Action.Light.MouseButton1Up, function()
+			Creator.AddGuarded(Action.Light, "MouseButton1Up", function()
 				Action.Light.BackgroundColor3 = Fill
 			end)
-			Creator.AddSignal(Action.Light.MouseButton1Click, function()
+			Creator.AddGuarded(Action.Light, "MouseButton1Click", function()
 				Action.Callback()
 			end)
 
@@ -9227,6 +12220,11 @@ end)()
 Components.Notification = (function()
 	local Spring = Flipper.Spring.new
 
+	local ActionSize = 26
+	local ActionGap = 2
+	local ButtonGap = 8
+	local ButtonHeight = 36
+
 	local Notification = {
 		Position = "Bottom Right",
 		Counter = 0,
@@ -9242,11 +12240,204 @@ Components.Notification = (function()
 	}
 
 	local Types = {
-		Info = "info",
-		Success = "check-circle",
-		Warning = "alert-triangle",
-		Error = "x-circle",
+		Info = { Icon = "info", Tag = "Info" },
+		Success = { Icon = "check-circle", Tag = "Success" },
+		Warning = { Icon = "alert-triangle", Tag = "Warning" },
+		Error = { Icon = "x-circle", Tag = "Danger" },
 	}
+
+	local Variants = {
+		Tonal = { Fill = "Text", Text = "Text", Base = 0.9, Hover = 0.84, Press = 0.78, Stroke = true },
+		Ghost = { Fill = "Text", Text = "Text", Base = 1, Hover = 0.92, Press = 0.86 },
+		Primary = { Fill = "Text", Text = "AcrylicMain", Base = 0, Hover = 0.1, Press = 0.2 },
+		Accent = { Fill = "Accent", Text = "AccentText", Base = 0, Hover = 0.1, Press = 0.2, Gradient = true },
+		Danger = { Fill = "Danger", Text = Color3.new(1, 1, 1), Base = 0, Hover = 0.1, Press = 0.2, Gradient = true },
+	}
+
+	local function Paint(Props, Property, Value)
+		if typeof(Value) == "Color3" then
+			Props[Property] = Value
+			if Props.ThemeTag then
+				Props.ThemeTag[Property] = nil
+			end
+		elseif type(Value) == "string" and Value ~= "" then
+			Props.ThemeTag = Props.ThemeTag or {}
+			Props.ThemeTag[Property] = Value
+		end
+
+		if Props.ThemeTag and next(Props.ThemeTag) == nil then
+			Props.ThemeTag = nil
+		end
+
+		return Props
+	end
+
+	local function IconButton(Image, Color, Callback)
+		local Button = {
+			Hovering = false,
+			Toggled = false,
+			Callback = Callback or function() end,
+		}
+
+		Button.Icon = New(
+			"ImageLabel",
+			Paint({
+				Image = Image or "",
+				Size = UDim2.fromOffset(14, 14),
+				Position = UDim2.fromScale(0.5, 0.5),
+				AnchorPoint = Vector2.new(0.5, 0.5),
+				BackgroundTransparency = 1,
+				ImageTransparency = 0.35,
+				ThemeTag = {
+					ImageColor3 = "Text",
+				},
+			}, "ImageColor3", Color)
+		)
+
+		Button.Frame = New("TextButton", {
+			Text = "",
+			AutoButtonColor = false,
+			Size = UDim2.fromOffset(ActionSize, ActionSize),
+			BackgroundTransparency = 1,
+			ThemeTag = {
+				BackgroundColor3 = "Text",
+			},
+		}, {
+			Corner(8),
+			Button.Icon,
+		})
+
+		local Motor, SetTransparency = Creator.SpringMotor(1, Button.Frame, "BackgroundTransparency", true)
+
+		local function Settle()
+			local Active = Button.Hovering or Button.Toggled
+			SetTransparency(Active and 0.88 or 1, true)
+			Creator.Tween(Button.Icon, 0.12, { ImageTransparency = Active and 0 or 0.35 })
+		end
+
+		Creator.OnHoverEnter(Button.Frame, function()
+			if Library.InputLocked then
+				return
+			end
+			Button.Hovering = true
+			Settle()
+		end)
+
+		Creator.OnHoverLeave(Button.Frame, function()
+			Button.Hovering = false
+			Settle()
+		end)
+
+		Creator.AddGuarded(Button.Frame, "MouseButton1Down", function()
+			if not Creator.AcceptsInput(Button.Frame) then
+				return
+			end
+			SetTransparency(0.8, true)
+		end)
+
+		Creator.AddGuarded(Button.Frame, "MouseButton1Up", function()
+			Settle()
+		end)
+
+		Creator.AddGuarded(Button.Frame, "MouseButton1Click", function()
+			Button.Callback()
+		end)
+
+		function Button.SetToggled(Value)
+			Button.Toggled = Value == true
+			Settle()
+		end
+
+		return Button
+	end
+
+	local function TextButton(Entry, Index, Count)
+		local Colored = Entry.Color ~= nil
+		local VariantName = Entry.Variant or ((Colored or Index == Count) and "Accent" or "Tonal")
+		local Spec = Variants[VariantName] or Variants.Tonal
+		local Fill = Entry.Color or Spec.Fill
+		local TextColor = Entry.TextColor or (Colored and Color3.new(1, 1, 1) or Spec.Text)
+
+		local Button = {
+			Spec = Spec,
+			Callback = Entry.Callback,
+		}
+
+		Button.Title = New(
+			"TextLabel",
+			Paint({
+				Text = tostring(Entry.Title or Entry.Text or "Button"),
+				FontFace = Fonts.SemiBold,
+				TextSize = Entry.TextSize or 13,
+				TextXAlignment = Enum.TextXAlignment.Center,
+				TextTruncate = Enum.TextTruncate.AtEnd,
+				BackgroundTransparency = 1,
+				Size = UDim2.fromScale(1, 1),
+			}, "TextColor3", TextColor)
+		)
+
+		Button.Frame = New(
+			"TextButton",
+			Paint({
+				Text = "",
+				AutoButtonColor = false,
+				Size = UDim2.new(1 / Count, -(ButtonGap * (Count - 1)) / Count, 1, 0),
+				BackgroundTransparency = Spec.Base,
+				LayoutOrder = Index,
+			}, "BackgroundColor3", Fill),
+			{
+				Corner(999),
+				New("UIPadding", {
+					PaddingLeft = UDim.new(0, 12),
+					PaddingRight = UDim.new(0, 12),
+				}),
+				Button.Title,
+			}
+		)
+
+		if Spec.Stroke then
+			Stroke("Text", 0.88).Parent = Button.Frame
+		end
+
+		if Spec.Gradient then
+			New("UIGradient", {
+				Rotation = 90,
+				Color = ColorSequence.new(Color3.new(1, 1, 1), Color3.fromRGB(196, 196, 196)),
+				Parent = Button.Frame,
+			})
+		end
+
+		local Motor, Set = Creator.SpringMotor(Spec.Base, Button.Frame, "BackgroundTransparency", true)
+
+		Creator.OnHoverEnter(Button.Frame, function()
+			Set(Spec.Hover)
+		end)
+
+		Creator.OnHoverLeave(Button.Frame, function()
+			Set(Spec.Base)
+		end)
+
+		Creator.AddGuarded(Button.Frame, "MouseButton1Down", function()
+			if not Creator.AcceptsInput(Button.Frame) then
+				return
+			end
+			Set(Spec.Press)
+		end)
+
+		Creator.AddGuarded(Button.Frame, "MouseButton1Up", function()
+			Set(Spec.Hover)
+		end)
+
+		function Button:SetText(Value)
+			Button.Title.Text = tostring(Value)
+		end
+
+		function Button:SetCallback(Func)
+			Button.Callback = Func
+		end
+
+		return Button
+	end
 
 	function Notification.Normalize(Value)
 		local Key = string.lower(tostring(Value or ""))
@@ -9350,13 +12541,19 @@ Components.Notification = (function()
 	end
 
 	function Notification:New(Config)
+		Config = Config or {}
 		Config.Title = Config.Title or "Title"
 		Config.Content = Config.Content or ""
 		Config.SubContent = Config.SubContent or ""
 		Config.Duration = Config.Duration or nil
 		Config.Buttons = Config.Buttons or {}
+		Config.Actions = Config.Actions or Config.ActionButtons or {}
+
 		local NewNotification = {
+			ClassType = "Notification",
 			Closed = false,
+			Actions = {},
+			ButtonList = {},
 		}
 
 		local Right = string.find(Notification.Position, "Right", 1, true) ~= nil
@@ -9364,41 +12561,55 @@ Components.Notification = (function()
 		local Direction = Right and 1 or -1
 		Notification.Counter = Notification.Counter + 1
 
-		local IconId = Resolve(Config.Icon, "Notification", Config) or (Config.Type and Asset(Types[Config.Type] or "info"))
-		local TextLeft = IconId and 26 or 0
+		local TypeInfo = Config.Type and (Types[Config.Type] or Types.Info) or nil
+		local IconId = Resolve(Config.Icon, "Notification", Config) or (TypeInfo and Asset(TypeInfo.Icon)) or nil
+		local AccentColor = Config.Color or (TypeInfo and TypeInfo.Tag) or nil
+		local IconColor = Config.IconColor or AccentColor
+		local BarColor = Config.BarColor or AccentColor or "Accent"
+		local TextLeft = IconId and 36 or 0
+		local HasButtons = #Config.Buttons > 0
+		local HasProgress = Config.Duration ~= nil and Config.Progress ~= false
 
-		NewNotification.Icon = New("ImageLabel", {
-			Image = IconId or "",
-			Size = UDim2.fromOffset(17, 17),
-			Position = UDim2.fromOffset(0, 1),
-			Visible = IconId ~= nil,
-			ThemeTag = {
-				ImageColor3 = "ToastText",
-			},
+		NewNotification.Icon = New(
+			"ImageLabel",
+			Paint({
+				Image = IconId or "",
+				Size = UDim2.fromOffset(24, 24),
+				Position = UDim2.fromOffset(0, -1),
+				BackgroundTransparency = 1,
+				Visible = IconId ~= nil,
+				ThemeTag = {
+					ImageColor3 = "Text",
+				},
+			}, "ImageColor3", IconColor)
+		)
+
+		NewNotification.TitlePadding = New("UIPadding", {
+			PaddingRight = UDim.new(0, 26),
 		})
 
 		NewNotification.Title = Label({
 			Text = Config.Title,
 			RichText = true,
-			Tag = "ToastText",
+			Tag = "Text",
 			Weight = "SemiBold",
-			TextSize = 13,
+			TextSize = 15,
 			TextWrapped = true,
 			AutomaticSize = Enum.AutomaticSize.Y,
-			Size = UDim2.new(1, 0, 0, 17),
+			Size = UDim2.new(1, 0, 0, 22),
 			LayoutOrder = 1,
 		})
+		NewNotification.TitlePadding.Parent = NewNotification.Title
 
 		NewNotification.ContentLabel = Label({
 			Text = Config.Content,
 			RichText = true,
-			Tag = "ToastText",
+			Tag = "TextSecondary",
 			Weight = "Regular",
-			TextSize = 12,
-			TextTransparency = 0.32,
+			TextSize = 13,
 			TextWrapped = true,
 			AutomaticSize = Enum.AutomaticSize.Y,
-			Size = UDim2.new(1, 0, 0, 14),
+			Size = UDim2.new(1, 0, 0, 16),
 			LayoutOrder = 2,
 			Visible = Config.Content ~= "",
 		})
@@ -9406,10 +12617,9 @@ Components.Notification = (function()
 		NewNotification.SubContentLabel = Label({
 			Text = Config.SubContent,
 			RichText = true,
-			Tag = "ToastText",
+			Tag = "SubText",
 			Weight = "Regular",
 			TextSize = 12,
-			TextTransparency = 0.45,
 			TextWrapped = true,
 			AutomaticSize = Enum.AutomaticSize.Y,
 			Size = UDim2.new(1, 0, 0, 14),
@@ -9432,42 +12642,111 @@ Components.Notification = (function()
 			NewNotification.SubContentLabel,
 		})
 
-		NewNotification.CloseButton = New("TextButton", {
-			Position = UDim2.new(1, -8, 0, 8),
-			Size = UDim2.fromOffset(20, 20),
+		NewNotification.Header = New("Frame", {
+			AutomaticSize = Enum.AutomaticSize.Y,
+			BackgroundTransparency = 1,
+			Size = UDim2.new(1, 0, 0, 0),
+			LayoutOrder = 1,
+		}, {
+			New("UIPadding", {
+				PaddingTop = UDim.new(0, 4),
+				PaddingLeft = UDim.new(0, 8),
+				PaddingRight = UDim.new(0, 8),
+			}),
+			NewNotification.Icon,
+			NewNotification.LabelHolder,
+		})
+
+		NewNotification.ButtonRow = New("Frame", {
+			BackgroundTransparency = 1,
+			Size = UDim2.new(1, 0, 0, ButtonHeight),
+			LayoutOrder = 2,
+			Visible = HasButtons,
+		}, {
+			New("UIListLayout", {
+				FillDirection = Enum.FillDirection.Horizontal,
+				SortOrder = Enum.SortOrder.LayoutOrder,
+				VerticalAlignment = Enum.VerticalAlignment.Center,
+				Padding = UDim.new(0, ButtonGap),
+			}),
+		})
+
+		NewNotification.Content = New("Frame", {
+			AutomaticSize = Enum.AutomaticSize.Y,
+			BackgroundTransparency = 1,
+			Size = UDim2.new(1, 0, 0, 0),
+		}, {
+			New("UIPadding", {
+				PaddingTop = UDim.new(0, 14),
+				PaddingBottom = UDim.new(0, HasButtons and 10 or 14),
+				PaddingLeft = UDim.new(0, 10),
+				PaddingRight = UDim.new(0, 10),
+			}),
+			New("UIListLayout", {
+				SortOrder = Enum.SortOrder.LayoutOrder,
+				Padding = UDim.new(0, 12),
+			}),
+			NewNotification.Header,
+			NewNotification.ButtonRow,
+		})
+
+		NewNotification.ActionHolder = New("Frame", {
 			AnchorPoint = Vector2.new(1, 0),
+			Position = UDim2.new(1, -12, 0, 16),
+			Size = UDim2.fromOffset(0, ActionSize),
+			AutomaticSize = Enum.AutomaticSize.X,
 			BackgroundTransparency = 1,
 			ZIndex = 5,
 		}, {
-			New("ImageLabel", {
-				Image = Asset("x"),
-				Size = UDim2.fromOffset(13, 13),
-				Position = UDim2.fromScale(0.5, 0.5),
-				AnchorPoint = Vector2.new(0.5, 0.5),
-				ImageTransparency = 0.35,
-				ThemeTag = {
-					ImageColor3 = "ToastText",
-				},
+			New("UIListLayout", {
+				FillDirection = Enum.FillDirection.Horizontal,
+				HorizontalAlignment = Enum.HorizontalAlignment.Right,
+				VerticalAlignment = Enum.VerticalAlignment.Center,
+				SortOrder = Enum.SortOrder.LayoutOrder,
+				Padding = UDim.new(0, ActionGap),
 			}),
 		})
 
 		NewNotification.Body = New("Frame", {
 			Size = UDim2.new(1, 0, 0, 0),
 			AutomaticSize = Enum.AutomaticSize.Y,
-			ThemeTag = {
-				BackgroundColor3 = "ToastBackground",
-			},
+			ClipsDescendants = true,
+			BackgroundColor3 = Color3.new(1, 1, 1),
 		}, {
-			Corner(14),
-			New("UIPadding", {
-				PaddingTop = UDim.new(0, 12),
-				PaddingBottom = UDim.new(0, 12),
-				PaddingLeft = UDim.new(0, 14),
-				PaddingRight = UDim.new(0, 40),
+			Corner(Config.Radius or 20),
+			Stroke("AcrylicBorder", 0.2),
+			New("UIGradient", {
+				Rotation = 90,
+				ThemeTag = {
+					Color = "AcrylicGradient",
+				},
 			}),
-			NewNotification.Icon,
-			NewNotification.LabelHolder,
+			NewNotification.Content,
+			NewNotification.ActionHolder,
 		})
+
+		if HasProgress then
+			NewNotification.ProgressFill = New(
+				"Frame",
+				Paint({
+					Size = UDim2.fromScale(1, 1),
+					BorderSizePixel = 0,
+				}, "BackgroundColor3", BarColor),
+				{
+					SideCorner(0, 0, 2, 2),
+				}
+			)
+
+			NewNotification.ProgressTrack = New("Frame", {
+				Position = UDim2.fromOffset(18, 0),
+				Size = UDim2.new(1, -36, 0, 3),
+				BackgroundTransparency = 1,
+				ZIndex = 4,
+				Parent = NewNotification.Body,
+			}, {
+				NewNotification.ProgressFill,
+			})
+		end
 
 		NewNotification.Root = New("Frame", {
 			BackgroundTransparency = 1,
@@ -9477,8 +12756,6 @@ Components.Notification = (function()
 		}, {
 			NewNotification.Body,
 		})
-
-		NewNotification.CloseButton.Parent = NewNotification.Root
 
 		NewNotification.Holder = New("Frame", {
 			BackgroundTransparency = 1,
@@ -9499,20 +12776,167 @@ Components.Notification = (function()
 			NewNotification.Root.Position = UDim2.new(Values.Scale, Values.Offset, 0, 0)
 		end)
 
-		Creator.AddSignal(NewNotification.CloseButton.MouseButton1Click, function()
-			NewNotification:Close()
-		end)
+		local function RefreshReserve()
+			local Count = NewNotification.CloseHandle and 1 or 0
+			for _, Item in NewNotification.Actions do
+				if Item.Shown then
+					Count = Count + 1
+				end
+			end
+			NewNotification.TitlePadding.PaddingRight = UDim.new(0, Count > 0 and (Count * (ActionSize + ActionGap) - 2) or 0)
+		end
+
+		function NewNotification:SetTitle(Value)
+			NewNotification.Title.Text = tostring(Value)
+		end
+
+		function NewNotification:SetContent(Value)
+			Value = tostring(Value or "")
+			NewNotification.ContentLabel.Text = Value
+			NewNotification.ContentLabel.Visible = Value ~= ""
+		end
+
+		function NewNotification:SetSubContent(Value)
+			Value = tostring(Value or "")
+			NewNotification.SubContentLabel.Text = Value
+			NewNotification.SubContentLabel.Visible = Value ~= ""
+		end
+
+		function NewNotification:SetIcon(Value)
+			local Image = Resolve(Value, "Notification")
+			if Image then
+				Creator.SetImage(NewNotification.Icon, Image)
+			end
+			NewNotification.Icon.Visible = Image ~= nil
+		end
+
+		function NewNotification:AddAction(ActionConfig)
+			ActionConfig = ActionConfig or {}
+			local Callback = ActionConfig.Callback
+			local Toggle = ActionConfig.Toggle == true
+			local Action = {
+				Shown = ActionConfig.Visible ~= false,
+				Value = false,
+				Destroyed = false,
+			}
+
+			Action.Button = IconButton(
+				Resolve(ActionConfig.Icon, "Notification", ActionConfig) or "",
+				ActionConfig.Color,
+				function()
+					if Toggle then
+						Action:SetValue(not Action.Value)
+					else
+						Library:SafeCallback(Callback, NewNotification, Action)
+					end
+
+					if ActionConfig.Close then
+						NewNotification:Close()
+					end
+				end
+			)
+
+			Action.Frame = Action.Button.Frame
+			Action.Frame.LayoutOrder = #NewNotification.Actions + 1
+			Action.Frame.Visible = Action.Shown
+			Action.Frame.Parent = NewNotification.ActionHolder
+
+			function Action:SetIcon(Value)
+				Creator.SetImage(Action.Button.Icon, Resolve(Value, "Notification") or "")
+			end
+
+			function Action:SetCallback(Func)
+				Callback = Func
+			end
+
+			function Action:SetVisible(Value)
+				Action.Shown = Value and true or false
+				Action.Frame.Visible = Action.Shown
+				RefreshReserve()
+			end
+
+			function Action:Destroy()
+				if Action.Destroyed then
+					return
+				end
+				Action.Destroyed = true
+
+				local Position = table.find(NewNotification.Actions, Action)
+				if Position then
+					table.remove(NewNotification.Actions, Position)
+				end
+
+				Action.Frame:Destroy()
+				RefreshReserve()
+			end
+
+			if Toggle then
+				function Action:SetValue(Value, Silent)
+					Value = Value == true
+					if Action.Value == Value then
+						return
+					end
+
+					Action.Value = Value
+					Action.Button.SetToggled(Value)
+
+					if not Silent then
+						Library:SafeCallback(Callback, Value, NewNotification, Action)
+					end
+				end
+
+				function Action:GetValue()
+					return Action.Value
+				end
+
+				function Action:Toggle()
+					Action:SetValue(not Action.Value)
+				end
+
+				if ActionConfig.Default == true then
+					Action:SetValue(true, true)
+				end
+			end
+
+			table.insert(NewNotification.Actions, Action)
+			RefreshReserve()
+			return Action
+		end
+
+		function NewNotification:AddBarButtonAction(ActionConfig)
+			return NewNotification:AddAction(ActionConfig)
+		end
+
+		function NewNotification:AddBarButtonToggle(ActionConfig)
+			local ToggleConfig = table.clone(ActionConfig or {})
+			ToggleConfig.Toggle = true
+			return NewNotification:AddAction(ToggleConfig)
+		end
 
 		function NewNotification:Open()
 			RootMotor:SetGoal({
 				Scale = Spring(0, { Frequency = 5 }),
 				Offset = Spring(0, { Frequency = 5 }),
 			})
+
+			if NewNotification.ProgressFill and Config.Duration then
+				NewNotification.ProgressTween = Creator.Tween(
+					NewNotification.ProgressFill,
+					Config.Duration,
+					{ Size = UDim2.new(0, 0, 1, 0) },
+					Enum.EasingStyle.Linear
+				)
+			end
 		end
 
 		function NewNotification:Close()
 			if not NewNotification.Closed then
 				NewNotification.Closed = true
+
+				if NewNotification.ProgressTween then
+					NewNotification.ProgressTween:Cancel()
+				end
+
 				task.spawn(function()
 					RootMotor:SetGoal({
 						Scale = Spring(Direction, { Frequency = 5 }),
@@ -9524,12 +12948,47 @@ Components.Notification = (function()
 			end
 		end
 
+		if Config.Closable ~= false then
+			NewNotification.CloseHandle = IconButton(Asset("x"), nil, function()
+				NewNotification:Close()
+			end)
+			NewNotification.CloseButton = NewNotification.CloseHandle.Frame
+			NewNotification.CloseButton.LayoutOrder = 1000
+			NewNotification.CloseButton.Parent = NewNotification.ActionHolder
+		end
+
+		local ButtonCount = #Config.Buttons
+		for Index, Entry in Config.Buttons do
+			if type(Entry) == "table" then
+				local Button = TextButton(Entry, Index, ButtonCount)
+				Button.Frame.Parent = NewNotification.ButtonRow
+
+				Creator.AddGuarded(Button.Frame, "MouseButton1Click", function()
+					Library:SafeCallback(Button.Callback, NewNotification, Button)
+					if not Entry.Keep then
+						NewNotification:Close()
+					end
+				end)
+
+				table.insert(NewNotification.ButtonList, Button)
+			end
+		end
+
+		for _, Entry in Config.Actions do
+			if type(Entry) == "table" then
+				NewNotification:AddAction(Entry)
+			end
+		end
+
+		RefreshReserve()
 		NewNotification:Open()
+
 		if Config.Duration then
 			task.delay(Config.Duration, function()
 				NewNotification:Close()
 			end)
 		end
+
 		return NewNotification
 	end
 
@@ -9654,6 +13113,7 @@ Components.Toast = (function()
 		local Style = Types[Config.Type]
 		local IconId = Resolve(Config.Icon, "Notification", Config) or (Style and Asset(Style.Icon)) or nil
 		local NewToast = {
+			ClassType = "Notification",
 			Closed = false,
 			Token = 0,
 			Duration = Config.Duration or math.clamp(#Text * 0.05, Toast.MinDuration, Toast.MaxDuration),
@@ -9789,7 +13249,7 @@ Components.Toast = (function()
 		end
 
 		if NewToast.Action then
-			Creator.AddSignal(NewToast.Action.MouseButton1Click, function()
+			Creator.AddGuarded(NewToast.Action, "MouseButton1Click", function()
 				Library:SafeCallback(Action.Callback, NewToast)
 				if Action.Close ~= false then
 					NewToast:Close()
@@ -9934,6 +13394,7 @@ Components.Dialog = (function()
 		local Blocked = (Top ~= nil and Top.AllowNested ~= true) or not Host.Root.Visible
 
 		local NewDialog = {
+			ClassType = "Dialog",
 			Buttons = 0,
 			Count = 0,
 			Host = Host,
@@ -9960,7 +13421,26 @@ Components.Dialog = (function()
 			Corner(Host.CornerRadius or 13),
 		})
 
+		Creator.RegisterSurface(NewDialog.TintFrame)
+
 		local TintMotor, TintTransparency = Creator.SpringMotor(1, NewDialog.TintFrame, "BackgroundTransparency", true)
+
+		local DoNotBlur = Options.DoNotBlur
+		if DoNotBlur == nil then
+			DoNotBlur = Host.DoNotBlur
+		end
+
+		if not Blocked and Library.BlurEnabled and DoNotBlur ~= true then
+			NewDialog.Blur = Creator.New("UiBlur", {
+				Parent = NewDialog.TintFrame,
+				Blur = Options.BlurAmount or 6,
+				Brightness = 0.9,
+				Saturate = 1.1,
+				Tint = Creator.GetThemeProperty("Overlay"),
+				TintTransparency = 0.78,
+				Opacity = 0,
+			})
+		end
 
 		NewDialog.ButtonHolder = New("Frame", {
 			Size = UDim2.new(1, -36, 0, 40),
@@ -10056,9 +13536,21 @@ Components.Dialog = (function()
 			NewDialog.Opened = true
 			NewDialog.Fit = ComputeFit()
 			NewDialog.Scale.Scale = 1.06 * NewDialog.Fit
-			TintTransparency(Creator.GetThemeProperty("OverlayTransparency"))
-			RootTransparency(0)
-			Scale(NewDialog.Fit)
+			Library:CaptureBlur(NewDialog.Blur, function(Source)
+				NewDialog.BlurSource = Source
+				if NewDialog.Closing then
+					if Source then
+						Library:ReleaseBlur(NewDialog.Blur, Source)
+					end
+					return
+				end
+				TintTransparency(Creator.GetThemeProperty("OverlayTransparency"))
+				RootTransparency(0)
+				Scale(NewDialog.Fit)
+			end, {
+				Region = Host.Root,
+				Exclude = { [NewDialog.TintFrame] = true, [NewDialog.Root] = true },
+			})
 			SyncState()
 		end
 
@@ -10072,6 +13564,10 @@ Components.Dialog = (function()
 			end
 			Unregister(Host, NewDialog)
 			TintTransparency(1)
+			if NewDialog.Blur then
+				Library:ReleaseBlur(NewDialog.Blur, NewDialog.BlurSource)
+				NewDialog.BlurSource = nil
+			end
 			RootTransparency(1)
 			Scale(1.06 * NewDialog.Fit)
 			local Stroke = NewDialog.Root:FindFirstChildOfClass("UIStroke")
@@ -10104,7 +13600,7 @@ Components.Dialog = (function()
 				end
 			end
 
-			Creator.AddSignal(Button.Frame.MouseButton1Click, function()
+			Creator.AddGuarded(Button.Frame, "MouseButton1Click", function()
 				Library:SafeCallback(Callback, NewDialog)
 				if not Keep then
 					pcall(function()
@@ -10298,6 +13794,7 @@ Components.Menu = (function()
 
 		local self = setmetatable({
 			Type = "Menu",
+			ClassType = "Dialog",
 			Host = Host,
 			Library = Library,
 			Order = 0,
@@ -10327,7 +13824,26 @@ Components.Menu = (function()
 			Corner(Host.CornerRadius or 13),
 		})
 
+		Creator.RegisterSurface(self.Scrim)
+
 		local TintMotor, Tint = Creator.SpringMotor(1, self.Scrim, "BackgroundTransparency", true)
+
+		local DoNotBlur = Config.DoNotBlur
+		if DoNotBlur == nil then
+			DoNotBlur = Host.DoNotBlur
+		end
+
+		if Config.Blur ~= false and DoNotBlur ~= true and Library.BlurEnabled then
+			self.Blur = Creator.New("UiBlur", {
+				Parent = self.Scrim,
+				Blur = Config.BlurAmount or 6,
+				Brightness = 0.9,
+				Saturate = 1.1,
+				Tint = Creator.GetThemeProperty("Overlay"),
+				TintTransparency = 0.78,
+				Opacity = 0,
+			})
+		end
 
 		self.Title = Label({
 			Text = Config.Title or "",
@@ -10431,20 +13947,32 @@ Components.Menu = (function()
 				return self
 			end
 			self.IsOpen = true
-			self.Scrim.Visible = true
-			self:Resize()
-			self:Reposition()
-			if self.Dim then
-				Tint(Creator.GetThemeProperty("OverlayTransparency"))
-			end
-			self.Scale.Scale = 1.06
-			Fade(0)
-			Zoom(1)
-			task.defer(function()
-				if self.IsOpen then
-					self:Resize()
+			Library:CaptureBlur(self.Blur, function(Source)
+				if not self.IsOpen then
+					if Source then
+						Library:ReleaseBlur(self.Blur, Source, true)
+					end
+					return
 				end
-			end)
+				self.BlurSource = Source
+				self.Scrim.Visible = true
+				self:Resize()
+				self:Reposition()
+				if self.Dim then
+					Tint(Creator.GetThemeProperty("OverlayTransparency"))
+				end
+				self.Scale.Scale = 1.06
+				Fade(0)
+				Zoom(1)
+				task.defer(function()
+					if self.IsOpen then
+						self:Resize()
+					end
+				end)
+			end, {
+				Region = self.Host.Root,
+				Exclude = { [self.Scrim] = true },
+			})
 			if self.OnOpen then
 				Library:SafeCallback(self.OnOpen, self)
 			end
@@ -10457,6 +13985,10 @@ Components.Menu = (function()
 			end
 			self.IsOpen = false
 			Tint(1)
+			if self.Blur then
+				Library:ReleaseBlur(self.Blur, self.BlurSource, true)
+				self.BlurSource = nil
+			end
 			Fade(1)
 			Zoom(1.06)
 			if self.OnClose then
@@ -10510,7 +14042,7 @@ Components.Menu = (function()
 				Item.Frame.Size = UDim2.new(1 / Count, -(((Count - 1) * 8) / Count), 0, 40)
 			end
 
-			Creator.AddSignal(Button.Frame.MouseButton1Click, function()
+			Creator.AddGuarded(Button.Frame, "MouseButton1Click", function()
 				Library:SafeCallback(Callback)
 				if CloseAfter then
 					self:Close()
@@ -10528,19 +14060,23 @@ Components.Menu = (function()
 			end
 			table.clear(self.Sections)
 			self.Scrim:Destroy()
+			if self.BlurSource then
+				self.BlurSource:Destroy()
+				self.BlurSource = nil
+			end
 		end
 
 		Creator.AddSignal(self.Layout:GetPropertyChangedSignal("AbsoluteContentSize"), function()
 			self:Resize()
 		end)
 
-		Creator.AddSignal(self.Scrim.MouseButton1Click, function()
+		Creator.AddGuarded(self.Scrim, "MouseButton1Click", function()
 			if Config.CloseOnOutside ~= false then
 				self:Close()
 			end
 		end)
 
-		Creator.AddSignal(self.CloseButton.Frame.MouseButton1Click, function()
+		Creator.AddGuarded(self.CloseButton.Frame, "MouseButton1Click", function()
 			self:Close()
 		end)
 
@@ -10602,6 +14138,7 @@ Components.Tab = (function()
 			NavSelected = false,
 			Name = Title,
 			Type = "Tab",
+			ClassType = "Layout",
 			Kind = Kind,
 			Id = Config.Id,
 			Raw = Raw,
@@ -10763,7 +14300,7 @@ Components.Tab = (function()
 			Creator.AddSignal(Tab.Label:GetPropertyChangedSignal("TextBounds"), function()
 				Tab:UpdateLabel()
 			end)
-			Creator.AddSignal(Tab.Frame.MouseButton1Click, function()
+			Creator.AddGuarded(Tab.Frame, "MouseButton1Click", function()
 				TabModule:SelectTab(TabIndex)
 			end)
 		else
@@ -10801,14 +14338,15 @@ Components.Tab = (function()
 			})
 
 			function Tab:SetCollapsed(Value)
-				Tab.Frame.Size = Value and UDim2.fromOffset(38, 38) or UDim2.new(1, 0, 0, 38)
+				local Center = (Window.CollapsedWidth - 24) / 2
+				Tab.Frame.Size = UDim2.new(1, 0, 0, 38)
 				if Image then
 					Tab.Label.Visible = not Value
-					Tab.Icon.Position = Value and UDim2.fromScale(0.5, 0.5) or UDim2.new(0, 21, 0.5, 0)
+					Tab.Icon.Position = Value and UDim2.new(0, Center, 0.5, 0) or UDim2.new(0, 21, 0.5, 0)
 				else
-					Tab.Label.Position = Value and UDim2.fromOffset(0, 0) or UDim2.fromOffset(14, 0)
+					Tab.Label.Position = Value and UDim2.fromOffset(Center - 19, 0) or UDim2.fromOffset(14, 0)
 					Tab.Label.TextXAlignment = Value and Enum.TextXAlignment.Center or Enum.TextXAlignment.Left
-					Tab.Label.Size = Value and UDim2.fromScale(1, 1) or UDim2.new(1, -22, 1, 0)
+					Tab.Label.Size = Value and UDim2.new(0, 38, 1, 0) or UDim2.new(1, -22, 1, 0)
 					Tab.Label.Text = Value and string.sub(Tab.Name, 1, 2) or Tab.Name
 				end
 			end
@@ -10817,7 +14355,7 @@ Components.Tab = (function()
 
 			function Tab:UpdateLabel() end
 
-			Creator.AddSignal(Tab.Frame.MouseButton1Click, function()
+			Creator.AddGuarded(Tab.Frame, "MouseButton1Click", function()
 				TabModule:SelectTab(TabIndex)
 			end)
 
@@ -11355,6 +14893,7 @@ Components.Window = (function()
 			Size = UDim2.fromOffset(InitialSize.X, InitialSize.Y),
 			Position = UDim2.fromOffset(InitialPos.X, InitialPos.Y),
 			TabWidth = Config.TabWidth or 210,
+			DoNotBlur = Config.DoNotBlur,
 			CollapsedWidth = 70,
 			SidebarCollapsed = false,
 			ActionCount = 0,
@@ -11476,10 +15015,13 @@ Components.Window = (function()
 		Creator.OnHoverLeave(Window.ToggleButton, function()
 			ToggleTransparency(1, true)
 		end)
-		Creator.AddSignal(Window.ToggleButton.MouseButton1Down, function()
+		Creator.AddGuarded(Window.ToggleButton, "MouseButton1Down", function()
+			if not Creator.AcceptsInput(Window.ToggleButton) then
+				return
+			end
 			ToggleTransparency(0.9, true)
 		end)
-		Creator.AddSignal(Window.ToggleButton.MouseButton1Up, function()
+		Creator.AddGuarded(Window.ToggleButton, "MouseButton1Up", function()
 			ToggleTransparency(0.93, true)
 		end)
 
@@ -11510,7 +15052,7 @@ Components.Window = (function()
 		Window.SearchButton = New("TextButton", {
 			Size = UDim2.fromOffset(38, 32),
 			AnchorPoint = Vector2.new(0.5, 0),
-			Position = UDim2.fromScale(0.5, 0),
+			Position = UDim2.fromOffset((Window.CollapsedWidth - 24) / 2, 0),
 			BackgroundTransparency = 1,
 			Visible = false,
 			ThemeTag = {
@@ -11600,14 +15142,27 @@ Components.Window = (function()
 			}),
 		})
 
+		Window.ShadeCorner = New("UICorner", {})
+
+		Window.ShadeClip = New("CanvasGroup", {
+			Name = "ShadeClip",
+			Size = UDim2.fromScale(1, 1),
+			BackgroundTransparency = 1,
+			Active = false,
+			ZIndex = 20,
+		}, {
+			Window.ShadeCorner,
+			Window.ScrollShade,
+			Window.SidebarShade,
+		})
+
 		Window.Pages = New("Frame", {
 			Position = UDim2.fromOffset(Window.TabWidth, 0),
 			Size = UDim2.new(1, -Window.TabWidth, 1, 0),
 			BackgroundTransparency = 1,
 		}, {
 			Window.PageCanvas,
-			Window.ScrollShade,
-			Window.SidebarShade,
+			Window.ShadeClip,
 		})
 
 		function Window:UpdateScrollShade()
@@ -11641,6 +15196,7 @@ Components.Window = (function()
 			Size = Window.Size,
 			Position = Window.Position,
 			BackgroundTransparency = 1,
+			Active = true,
 			Parent = Config.Parent,
 		}, {
 			Corner(13),
@@ -11654,6 +15210,7 @@ Components.Window = (function()
 			Window.Body,
 			ResizeStartFrame,
 		})
+		Creator.RegisterSurface(Window.Root)
 
 		if Library.UseAcrylic then
 			Window.AcrylicBlur = Acrylic.Blur()
@@ -11810,18 +15367,39 @@ Components.Window = (function()
 
 		Window.SidebarGoal = Window.TabWidth
 		local SidebarToken = 0
+		local AppliedPagesGoal = nil
+		local AppliedShade = nil
 
 		Window.SidebarMotor:OnStep(function(Value)
 			Window.Sidebar.Size = UDim2.new(0, Value, 1, 0)
 			Window.Pages.Position = UDim2.fromOffset(Value, 0)
-			Window.Pages.Size = UDim2.new(1, -Window.SidebarGoal, 1, 0)
-			Window.SidebarShade.Visible = Value > 0
+			local Travel = math.max(Window.TabWidth - Window.CollapsedWidth, 1)
+			local Progress = math.clamp((Window.TabWidth - Value) / Travel, 0, 1)
+			Window.ToggleButton.AnchorPoint = Vector2.new(1 - 0.5 * Progress, 0)
+			Window.ToggleButton.Position = UDim2.new(1 - 0.5 * Progress, -6 * (1 - Progress), 0, 0)
+			local FollowBackground = Library.Background
+			if FollowBackground and FollowBackground.Follow then
+				FollowBackground:Follow(Value)
+			end
+			if AppliedPagesGoal ~= Window.SidebarGoal then
+				AppliedPagesGoal = Window.SidebarGoal
+				Window.Pages.Size = UDim2.new(1, -AppliedPagesGoal, 1, 0)
+			end
+			local ShadeVisible = Value > 0
+			if AppliedShade ~= ShadeVisible then
+				AppliedShade = ShadeVisible
+				Window.SidebarShade.Visible = ShadeVisible
+			end
 		end)
 
 		local function SettleSidebar()
 			Window.SidebarMoving = false
+			AppliedPagesGoal = Window.SidebarGoal
 			Window.Pages.Size = UDim2.new(1, -Window.SidebarGoal, 1, 0)
 			local Background = Library.Background
+			if Background and Background.EndFollow then
+				Background:EndFollow()
+			end
 			if Background and Background.ApplyLayout then
 				Background:ApplyLayout()
 			end
@@ -12004,7 +15582,20 @@ Components.Window = (function()
 			Creator.AddSignal(Config.Parent:GetPropertyChangedSignal("AbsoluteSize"), Refit)
 		end
 
+		local RefreshQueued = false
+
 		local function RefreshNotifications()
+			if Window.IsAnimating or Window.IsResizing then
+				if RefreshQueued then
+					return
+				end
+				RefreshQueued = true
+				task.delay(0.08, function()
+					RefreshQueued = false
+					Components.Notification:Refresh()
+				end)
+				return
+			end
 			Components.Notification:Refresh()
 		end
 		Creator.AddSignal(Window.Root:GetPropertyChangedSignal("AbsolutePosition"), RefreshNotifications)
@@ -12016,8 +15607,8 @@ Components.Window = (function()
 
 		Creator.AddSignal(Window.TitleBar.Frame.InputBegan, function(Input)
 			if
-				Input.UserInputType == Enum.UserInputType.MouseButton1
-				or Input.UserInputType == Enum.UserInputType.Touch
+				(Input.UserInputType == Enum.UserInputType.MouseButton1 or Input.UserInputType == Enum.UserInputType.Touch)
+				and Creator.AcceptsInput(Window.TitleBar.Frame, Input)
 			then
 				Dragging = true
 				Window.IsDragging = true
@@ -12055,9 +15646,7 @@ Components.Window = (function()
 			Window.SearchPage.ScrollingEnabled = not Locked
 			Window.TabScroll.ScrollingEnabled = not Locked
 			Window.ResizeShield.Visible = Locked
-			pcall(function()
-				Window.Root.Interactable = not Locked
-			end)
+			Creator.SetSurfaceLock(Window.Root, Locked)
 		end
 
 		local function ResolveResize(Session, Pointer)
@@ -12205,7 +15794,7 @@ Components.Window = (function()
 					EndResize(true)
 				end
 			end)
-			Session.Step = RunService.RenderStepped:Connect(StepResize)
+			Session.Step = RenderStepped:Connect(StepResize)
 		end
 
 		local function BeginResize(Spec, Input)
@@ -12293,7 +15882,9 @@ Components.Window = (function()
 				end)
 			end
 			Creator.AddSignal(Handle.InputBegan, function(Input)
-				BeginResize(Spec, Input)
+				if Creator.AcceptsInput(Handle, Input) then
+					BeginResize(Spec, Input)
+				end
 			end)
 		end
 
@@ -12359,7 +15950,7 @@ Components.Window = (function()
 			if not MinimizeNotif then
 				MinimizeNotif = true
 				local Key = Library.MinimizeKeybind and Library.MinimizeKeybind.Value or Library.MinimizeKey.Name
-				Library:Notify({
+				Library:InternalNotify({
 					Title = "Interface",
 					Content = "Press " .. Key .. " to toggle the interface.",
 					Duration = 6,
@@ -12407,6 +15998,9 @@ Components.Window = (function()
 			else
 				Window.SidebarMoving = true
 				local Background = Library.Background
+				if Background and Background.BeginFollow then
+					Background:BeginFollow(Window.SidebarMotor:GetValue())
+				end
 				if Background and Background.Hold then
 					Background:Hold(0.9)
 					Background:Suspend(1)
@@ -12428,8 +16022,6 @@ Components.Window = (function()
 			Window.SearchBox.Frame.Visible = not Value
 			Window.SearchButton.Visible = Value
 			Window.ToggleIcon.Image = Asset(Value and "chevron-right" or "chevron-left")
-			Window.ToggleButton.AnchorPoint = Value and Vector2.new(0.5, 0) or Vector2.new(1, 0)
-			Window.ToggleButton.Position = Value and UDim2.new(0.5, 0, 0, 0) or UDim2.new(1, -6, 0, 0)
 
 			for _, Tab in next, Components.Tab.Tabs do
 				if Tab.Kind ~= "Header" then
@@ -12461,11 +16053,11 @@ Components.Window = (function()
 			Window:SetSidebarCollapsed(not Window.SidebarCollapsed)
 		end
 
-		Creator.AddSignal(Window.ToggleButton.MouseButton1Click, function()
+		Creator.AddGuarded(Window.ToggleButton, "MouseButton1Click", function()
 			Window:ToggleSidebar()
 		end)
 
-		Creator.AddSignal(Window.SearchButton.MouseButton1Click, function()
+		Creator.AddGuarded(Window.SearchButton, "MouseButton1Click", function()
 			Window:SetSidebarCollapsed(false)
 			task.delay(0.15, function()
 				Window.SearchBox.Input:CaptureFocus()
@@ -12558,12 +16150,13 @@ Components.Window = (function()
 			if Content and Content.Kind ~= "Header" then
 				local Y = Content.Frame.AbsolutePosition.Y - Window.TabScroll.AbsolutePosition.Y + Window.TabScroll.CanvasPosition.Y
 				local Collapsed = Window.SidebarCollapsed
+				local PillPosition = Collapsed and UDim2.new(0, (Window.CollapsedWidth - 24) / 2, 0, Y) or UDim2.new(0.5, 0, 0, Y)
 				Window.Pill.Size = Collapsed and UDim2.fromOffset(38, 38) or UDim2.new(1, 0, 0, 38)
 				if Window.Pill.BackgroundTransparency >= 1 or Instantly then
-					Window.Pill.Position = UDim2.new(0.5, 0, 0, Y)
+					Window.Pill.Position = PillPosition
 					Window.Pill.BackgroundTransparency = 0.94
 				else
-					Creator.Tween(Window.Pill, 0.25, { Position = UDim2.new(0.5, 0, 0, Y) })
+					Creator.Tween(Window.Pill, 0.25, { Position = PillPosition })
 				end
 			else
 				Window.Pill.BackgroundTransparency = 1
@@ -12795,7 +16388,7 @@ Components.Window = (function()
 
 		function Window:Dialog(Config)
 			local Host = DialogModule:ResolveHost(Config)
-			local Dialog = DialogModule:Create({ Host = Host })
+			local Dialog = DialogModule:Create({ Host = Host, DoNotBlur = Config.DoNotBlur })
 			Dialog.Title.Text = Config.Title
 
 			local WindowWidth = Host.Root.AbsoluteSize.X
@@ -12943,7 +16536,7 @@ Components.Window = (function()
 			end
 
 			local Host = DialogModule:ResolveHost(Config)
-			local Dialog = DialogModule:Create({ Host = Host })
+			local Dialog = DialogModule:Create({ Host = Host, DoNotBlur = Config.DoNotBlur })
 			Dialog.Title.Text = Config.Title or ""
 			Dialog.Title.Size = UDim2.new(1, -110, 0, 20)
 
@@ -13101,7 +16694,7 @@ Components.Window = (function()
 						Parent = Box,
 					})
 
-					Creator.AddSignal(Box.MouseButton1Click, function()
+					Creator.AddGuarded(Box, "MouseButton1Click", function()
 						Hint.Text = if Copy(Block.Code) then "Copied" else "Clipboard is not available here"
 					end)
 				end
@@ -13173,11 +16766,11 @@ Components.Window = (function()
 				Next.Title.Text = if Current == Total then "Done" else "Next"
 			end
 
-			Creator.AddSignal(Back.Frame.MouseButton1Click, function()
+			Creator.AddGuarded(Back.Frame, "MouseButton1Click", function()
 				Show(Current - 1)
 			end)
 
-			Creator.AddSignal(Next.Frame.MouseButton1Click, function()
+			Creator.AddGuarded(Next.Frame, "MouseButton1Click", function()
 				if Current >= Total then
 					Close()
 				else
@@ -13185,7 +16778,7 @@ Components.Window = (function()
 				end
 			end)
 
-			Creator.AddSignal(CloseButton.MouseButton1Click, Close)
+			Creator.AddGuarded(CloseButton, "MouseButton1Click", Close)
 
 			Show(1)
 			Dialog:Open()
@@ -13199,7 +16792,7 @@ Components.Window = (function()
 			Config = Config or {}
 
 			local Host = DialogModule:ResolveHost(Config)
-			local Modal = DialogModule:Create({ Host = Host })
+			local Modal = DialogModule:Create({ Host = Host, DoNotBlur = Config.DoNotBlur })
 			Modal.Title.Text = Config.Title or "Modal"
 
 			local Closable: boolean = Config.Closable ~= false
@@ -13265,6 +16858,7 @@ Components.Window = (function()
 			end
 
 			Modal.Type = "Modal"
+			Modal.ClassType = "Dialog"
 			Modal.AllowNested = true
 			Modal.Library = Library
 			Modal.Container = Body
@@ -13377,13 +16971,13 @@ Components.Window = (function()
 			Modal.Root.Active = true
 
 			if Closable then
-				Creator.AddSignal(CreateCloseButton(Modal).MouseButton1Click, function()
+				Creator.AddGuarded(CreateCloseButton(Modal), "MouseButton1Click", function()
 					Modal:Close()
 				end)
 			end
 
 			if Config.Dismissable then
-				Creator.AddSignal(Modal.TintFrame.MouseButton1Click, function()
+				Creator.AddGuarded(Modal.TintFrame, "MouseButton1Click", function()
 					Modal:Close()
 				end)
 			end
@@ -13508,7 +17102,7 @@ Components.Window = (function()
 				Entry.Button.Visible = Visible
 				Entry.Label.Visible = not Collapsed
 				Entry.Icon.AnchorPoint = Collapsed and Vector2.new(0.5, 0.5) or Vector2.new(0, 0.5)
-				Entry.Icon.Position = Collapsed and UDim2.fromScale(0.5, 0.5) or UDim2.new(0, 10, 0.5, 0)
+				Entry.Icon.Position = Collapsed and UDim2.new(0, (Window.CollapsedWidth - 24) / 2, 0.5, 0) or UDim2.new(0, 10, 0.5, 0)
 				if Visible then
 					Count += 1
 				end
@@ -13597,7 +17191,7 @@ Components.Window = (function()
 			Creator.OnHoverLeave(Entry.Button, function()
 				Set(1)
 			end)
-			Creator.AddSignal(Entry.Button.MouseButton1Click, function()
+			Creator.AddGuarded(Entry.Button, "MouseButton1Click", function()
 				Library:SafeCallback(Config.Callback)
 			end)
 
@@ -13857,7 +17451,7 @@ Components.Window = (function()
 			RainbowGradient.Enabled = Window.Rainbow
 			ApplyBorderColor()
 			if Window.Rainbow and not RainbowConnection then
-				RainbowConnection = Creator.AddSignal(RunService.Heartbeat, function()
+				RainbowConnection = Creator.AddSignal(Heartbeat, function()
 					RainbowGradient.Rotation = (os.clock() * 90) % 360
 				end)
 			elseif not Window.Rainbow and RainbowConnection then
@@ -14029,6 +17623,7 @@ Components.PopUp = (function()
 
 		local PopUp = {
 			Type = "PopUp",
+			ClassType = "Dialog",
 			Id = Config.Id or `PopUp{PopUpModule.Count}`,
 			Name = Config.Title,
 			Library = Library,
@@ -14038,6 +17633,7 @@ Components.PopUp = (function()
 			Maximized = false,
 			Minimized = false,
 			Minimizable = Config.Minimizable ~= false,
+			DoNotBlur = Config.DoNotBlur,
 			MinimizeKey = Config.MinimizeKey,
 			MinimizeKeybind = Config.MinimizeKeybind,
 			IsResizing = false,
@@ -14119,6 +17715,7 @@ Components.PopUp = (function()
 			Size = UDim2.fromOffset(Size.X, Size.Y),
 			Position = UDim2.fromOffset(Position.X, Position.Y),
 			BackgroundTransparency = 1,
+			Active = true,
 			Visible = false,
 			ZIndex = BaseZIndex,
 			Parent = Parent,
@@ -14126,6 +17723,7 @@ Components.PopUp = (function()
 			PopUp.RootCorner,
 			PopUp.RootStroke,
 		})
+		Creator.RegisterSurface(PopUp.Root)
 
 		PopUp.CornerRadius = Radius
 		Library.DialogHosts[PopUp.Root] = PopUp
@@ -14800,7 +18398,7 @@ Components.PopUp = (function()
 
 			BuildHost(Tab, Tab.Container)
 
-			Creator.AddSignal(Tab.Frame.MouseButton1Click, function()
+			Creator.AddGuarded(Tab.Frame, "MouseButton1Click", function()
 				PopUp:SelectTab(Tab)
 			end)
 			Creator.AddSignal(Tab.Frame:GetPropertyChangedSignal("AbsoluteSize"), QueuePill)
@@ -14926,7 +18524,7 @@ Components.PopUp = (function()
 						or (Library.MinimizeKeybind and Library.MinimizeKeybind.Value)
 						or KeyName(Library.MinimizeKey)
 				if Key then
-					Library:Notify({
+					Library:InternalNotify({
 						Title = Config.Title,
 						Content = "Press " .. tostring(Key) .. " to toggle this popup.",
 						Duration = 6,
@@ -15353,7 +18951,10 @@ Components.PopUp = (function()
 			if not PopUp.Draggable or PopUp.Maximized then
 				return
 			end
-			if Input.UserInputType == Enum.UserInputType.MouseButton1 or Input.UserInputType == Enum.UserInputType.Touch then
+			if
+				(Input.UserInputType == Enum.UserInputType.MouseButton1 or Input.UserInputType == Enum.UserInputType.Touch)
+				and Creator.AcceptsInput(PopUp.Header, Input)
+			then
 				if PopUp.MoveTween then
 					PopUp.MoveTween:Cancel()
 					PopUp.MoveTween = nil
@@ -15391,7 +18992,10 @@ Components.PopUp = (function()
 			if not PopUp.ResizeAble or PopUp.Maximized or PopUp.IsResizing then
 				return
 			end
-			if Input.UserInputType == Enum.UserInputType.MouseButton1 or Input.UserInputType == Enum.UserInputType.Touch then
+			if
+				(Input.UserInputType == Enum.UserInputType.MouseButton1 or Input.UserInputType == Enum.UserInputType.Touch)
+				and Creator.AcceptsInput(PopUp.Grip, Input)
+			then
 				if PopUp.MoveTween then
 					PopUp.MoveTween:Cancel()
 					PopUp.MoveTween = nil
@@ -15670,6 +19274,7 @@ ElementsTable.Button = (function()
 	local Element = {}
 	Element.__index = Element
 	Element.__type = "Button"
+	Element.ClassType = "Action"
 	Element.NoIdx = true
 
 	local PillVariants = {
@@ -15716,7 +19321,7 @@ ElementsTable.Button = (function()
 				},
 			})
 			Row:SetReserve(34)
-			Creator.AddSignal(Row.Body.MouseButton1Click, Fire)
+			Creator.AddGuarded(Row.Body, "MouseButton1Click", Fire)
 		elseif Pill then
 			local Button = Components.Button({
 				Text = Config.ButtonText or "Run",
@@ -15733,7 +19338,7 @@ ElementsTable.Button = (function()
 			function Row:SetButtonText(Value)
 				Button:SetText(Value)
 			end
-			Creator.AddSignal(Button.Frame.MouseButton1Click, Fire)
+			Creator.AddGuarded(Button.Frame, "MouseButton1Click", Fire)
 		elseif IconKind then
 			local Button = Components.IconButton({
 				Icon = Config.ButtonIcon or "chevron-right",
@@ -15744,7 +19349,7 @@ ElementsTable.Button = (function()
 			Place(Button.Frame, Row)
 			Anchor = Button.Frame
 			Row.Button = Button
-			Creator.AddSignal(Button.Frame.MouseButton1Click, Fire)
+			Creator.AddGuarded(Button.Frame, "MouseButton1Click", Fire)
 		elseif Wide then
 			local Kind = Variant == "WideTonal" and "Tonal"
 				or Variant == "WideDanger" and "Danger"
@@ -15768,7 +19373,7 @@ ElementsTable.Button = (function()
 			function Row:SetButtonText(Value)
 				Button:SetText(Value)
 			end
-			Creator.AddSignal(Button.Frame.MouseButton1Click, Fire)
+			Creator.AddGuarded(Button.Frame, "MouseButton1Click", Fire)
 		else
 			Library:Alert("Button - Unknown Variant '" .. tostring(Variant) .. "'", "Error")
 			return nil
@@ -15788,6 +19393,7 @@ ElementsTable.Toggle = (function()
 	local Element = {}
 	Element.__index = Element
 	Element.__type = "Toggle"
+	Element.ClassType = "Input"
 
 	function Element:New(Idx, Config)
 		local Library = self.Library
@@ -15849,6 +19455,41 @@ ElementsTable.Toggle = (function()
 				else
 					Creator.Tween(Knob, 0.3, Goal, Enum.EasingStyle.Back)
 					Creator.Tween(Track, 0.22, { BackgroundTransparency = On and 0 or Creator.GetThemeProperty("ToggleSliderTransparency") })
+				end
+			end
+		elseif Variant == "Simplefield" then
+			local Knob = New("Frame", {
+				Size = UDim2.fromOffset(14, 14),
+				AnchorPoint = Vector2.new(0, 0.5),
+				Position = UDim2.new(0, 3, 0.5, 0),
+				BackgroundColor3 = Color3.new(1, 1, 1),
+			}, {
+				Corner(999),
+			})
+
+			local Track = New("Frame", {
+				Size = UDim2.fromOffset(36, 20),
+				BackgroundTransparency = 0.72,
+				ThemeTag = {
+					BackgroundColor3 = "ToggleSlider",
+				},
+			}, {
+				Corner(999),
+				Knob,
+			})
+
+			Place(Track, Row)
+
+			function Visual(Instant)
+				local On = Toggle.Value
+				Creator.OverrideTag(Track, { BackgroundColor3 = On and "ToggleToggled" or "ToggleSlider" })
+				local Goal = UDim2.new(0, On and 19 or 3, 0.5, 0)
+				if Instant then
+					Knob.Position = Goal
+					Track.BackgroundTransparency = On and 0 or 0.72
+				else
+					Creator.Tween(Knob, 0.2, { Position = Goal }, Enum.EasingStyle.Back)
+					Creator.Tween(Track, 0.18, { BackgroundTransparency = On and 0 or 0.72 })
 				end
 			end
 		elseif Variant == "Radio" then
@@ -15980,7 +19621,10 @@ ElementsTable.Toggle = (function()
 			Library.Options[Idx] = nil
 		end
 
-		Creator.AddSignal(Row.Body.MouseButton1Down, function()
+		Creator.AddGuarded(Row.Body, "MouseButton1Down", function()
+			if not Creator.AcceptsInput(Row.Body) then
+				return
+			end
 			Pressed = true
 			if Variant == "Switch" then
 				Visual(false)
@@ -15997,9 +19641,12 @@ ElementsTable.Toggle = (function()
 		end
 
 		Creator.OnHoverLeave(Row.Body, Release)
-		Creator.AddSignal(Row.Body.MouseButton1Up, Release)
+		Creator.AddGuarded(Row.Body, "MouseButton1Up", Release)
 
-		Creator.AddSignal(Row.Body.MouseButton1Click, function()
+		Creator.AddGuarded(Row.Body, "MouseButton1Click", function()
+			if not Creator.AcceptsInput(Row.Body) then
+				return
+			end
 			Toggle:SetValue(not Toggle.Value)
 		end)
 
@@ -16017,6 +19664,7 @@ ElementsTable.Slider = (function()
 	local Element = {}
 	Element.__index = Element
 	Element.__type = "Slider"
+	Element.ClassType = "Input"
 
 	function Element:New(Idx, Config)
 		local Library = self.Library
@@ -16314,6 +19962,7 @@ ElementsTable.Paragraph = (function()
 	local Paragraph = {}
 	Paragraph.__index = Paragraph
 	Paragraph.__type = "Paragraph"
+	Paragraph.ClassType = "Display"
 	Paragraph.NoIdx = true
 
 	local Variants = {
@@ -16469,6 +20118,7 @@ ElementsTable.Segmented = (function()
 	local Element = {}
 	Element.__index = Element
 	Element.__type = "Segmented"
+	Element.ClassType = "Input"
 
 	local function Normalize(List)
 		local Result = {}
@@ -16590,7 +20240,7 @@ ElementsTable.Segmented = (function()
 				table.insert(Buttons, Item)
 
 				Library.CreateItemHover(Frame, { Radius = 8 })
-				Creator.AddSignal(Frame.MouseButton1Click, function()
+				Creator.AddGuarded(Frame, "MouseButton1Click", function()
 					Segmented:SetValue(Option.Value)
 				end)
 			end
@@ -16640,11 +20290,47 @@ ElementsTable.Dropdown = (function()
 	local Element = {}
 	Element.__index = Element
 	Element.__type = "Dropdown"
+	Element.ClassType = "Input"
 
 	local Specs = {
 		Menu = { Height = 34, Radius = 9, Fill = "DropdownFrame", Base = 0.94, Hover = 0.9, TextSize = 12.5, Width = 150 },
 		Compact = { Height = 26, Radius = 8, Fill = "DropdownFrame", Base = 0.94, Hover = 0.9, TextSize = 12, Width = 120 },
 	}
+
+	local SortModes = {
+		Load = true,
+		Reverse = true,
+		Alphabetical = true,
+		AlphabeticalReverse = true,
+		Length = true,
+		Selected = true,
+		Relevance = true,
+	}
+
+	local function EscapeRich(Text)
+		return (Text:gsub("&", "&amp;"):gsub("<", "&lt;"):gsub(">", "&gt;"):gsub('"', "&quot;"):gsub("'", "&apos;"))
+	end
+
+	local function HighlightRich(Text, Query)
+		local Lower = string.lower(Text)
+		local Parts = {}
+		local Cursor = 1
+		while true do
+			local From, To = string.find(Lower, Query, Cursor, true)
+			if not From then
+				break
+			end
+			if From > Cursor then
+				table.insert(Parts, EscapeRich(string.sub(Text, Cursor, From - 1)))
+			end
+			table.insert(Parts, "<b>" .. EscapeRich(string.sub(Text, From, To)) .. "</b>")
+			Cursor = To + 1
+		end
+		if Cursor <= #Text then
+			table.insert(Parts, EscapeRich(string.sub(Text, Cursor)))
+		end
+		return table.concat(Parts)
+	end
 
 	function Element:New(Idx, Config)
 		local Library = self.Library
@@ -16655,7 +20341,14 @@ ElementsTable.Dropdown = (function()
 		local Segmented = Variant == "Segmented"
 		local Spec = Specs[Variant] or Specs.Menu
 
+		local SortOrder = Config.SortOrder or "Load"
+		assert(
+			type(SortOrder) == "function" or SortModes[SortOrder],
+			"Dropdown - Unknown SortOrder '" .. tostring(SortOrder) .. "'"
+		)
+
 		local Dropdown = {
+			SortOrder = SortOrder,
 			Values = Config.Values,
 			Value = Config.Multi and {} or nil,
 			Multi = Config.Multi,
@@ -16942,6 +20635,7 @@ ElementsTable.Dropdown = (function()
 				PopupFrame,
 			})
 			table.insert(Library.OpenFrames, Popup)
+			Creator.RegisterSurface(Popup)
 		end
 
 		local ListWidth = 0
@@ -16983,25 +20677,139 @@ ElementsTable.Dropdown = (function()
 			Place_()
 		end
 
+		local function GetQuery()
+			if not SearchBox or not Dropdown.Searchable then
+				return ""
+			end
+			local Query = string.lower(SearchBox.Input.Text or "")
+			return Query:match("^%s*(.-)%s*$")
+		end
+
+		local function ApplySort()
+			local Mode = Dropdown.SortOrder
+			local Query = GetQuery()
+			local Entries = {}
+			for Index, Value in ipairs(Dropdown.Values) do
+				Entries[Index] = { Value = Value, Index = Index, Text = string.lower(tostring(Value)) }
+			end
+
+			local function Rank(Entry)
+				if Query == "" then
+					return 0
+				end
+				local From = string.find(Entry.Text, Query, 1, true)
+				if From == 1 then
+					return 0
+				elseif From and string.find(string.sub(Entry.Text, From - 1, From - 1), "[%s%p]") then
+					return 1
+				end
+				return 2
+			end
+
+			local Compare
+			if type(Mode) == "function" then
+				Compare = function(A, B)
+					if Mode(A.Value, B.Value) then
+						return true
+					elseif Mode(B.Value, A.Value) then
+						return false
+					end
+					return A.Index < B.Index
+				end
+			elseif Mode == "Reverse" then
+				Compare = function(A, B)
+					return A.Index > B.Index
+				end
+			elseif Mode == "Alphabetical" then
+				Compare = function(A, B)
+					if A.Text ~= B.Text then
+						return A.Text < B.Text
+					end
+					return A.Index < B.Index
+				end
+			elseif Mode == "AlphabeticalReverse" then
+				Compare = function(A, B)
+					if A.Text ~= B.Text then
+						return A.Text > B.Text
+					end
+					return A.Index < B.Index
+				end
+			elseif Mode == "Length" then
+				Compare = function(A, B)
+					if #A.Text ~= #B.Text then
+						return #A.Text < #B.Text
+					end
+					return A.Index < B.Index
+				end
+			elseif Mode == "Selected" then
+				Compare = function(A, B)
+					local SelectedA = IsSelected(A.Value)
+					local SelectedB = IsSelected(B.Value)
+					if SelectedA ~= SelectedB then
+						return SelectedA
+					end
+					return A.Index < B.Index
+				end
+			elseif Mode == "Relevance" then
+				Compare = function(A, B)
+					local RankA = Rank(A)
+					local RankB = Rank(B)
+					if RankA ~= RankB then
+						return RankA < RankB
+					end
+					return A.Index < B.Index
+				end
+			else
+				Compare = function(A, B)
+					return A.Index < B.Index
+				end
+			end
+
+			table.sort(Entries, Compare)
+			for Position, Entry in ipairs(Entries) do
+				local Button = Buttons[Entry.Value]
+				if Button then
+					Button.Frame.LayoutOrder = Position
+				end
+			end
+		end
+
 		local function ApplyFilter()
 			if not SearchBox then
 				return
 			end
-			local Query = string.lower(SearchBox.Input.Text or "")
-			Query = Query:match("^%s*(.-)%s*$")
+			local Query = GetQuery()
 			local Shown = 0
 			local Total = 0
 			for Value, Button in next, Buttons do
 				Total += 1
-				local Match = not Dropdown.Searchable
-					or Query == ""
-					or string.find(string.lower(tostring(Value)), Query, 1, true) ~= nil
+				local Name = tostring(Value)
+				local Match = Query == "" or string.find(string.lower(Name), Query, 1, true) ~= nil
 				Button.Frame.Visible = Match
 				if Match then
 					Shown += 1
 				end
+				if Button.Label then
+					local Marked = Match and Query ~= "" and HighlightRich(Name, Query) or nil
+					if Button.Marked ~= Marked then
+						Button.Marked = Marked
+						Button.Label.RichText = Marked ~= nil
+						Button.Label.Text = Marked or Name
+					end
+				end
 			end
 			EmptyLabel.Visible = Dropdown.Searchable and Total > 0 and Shown == 0
+		end
+
+		function Dropdown:SetSortOrder(Mode)
+			Mode = Mode or "Load"
+			assert(type(Mode) == "function" or SortModes[Mode], "Dropdown - Unknown SortOrder '" .. tostring(Mode) .. "'")
+			Dropdown.SortOrder = Mode
+			ApplySort()
+		end
+
+		function Dropdown:GetSortOrder()
+			return Dropdown.SortOrder
 		end
 
 		function Dropdown:SetSearchable(Value)
@@ -17048,6 +20856,7 @@ ElementsTable.Dropdown = (function()
 					ZIndex = 53,
 				})
 
+				Item.Label = Text
 				Item.Frame = New("TextButton", {
 					Size = Segmented and UDim2.fromOffset(0, 28) or UDim2.new(1, 0, 0, 32),
 					AutomaticSize = Segmented and Enum.AutomaticSize.X or Enum.AutomaticSize.None,
@@ -17099,6 +20908,10 @@ ElementsTable.Dropdown = (function()
 
 				function Item:Update(Immediate)
 					local On = IsSelected(Value)
+					if Item.AppliedOn == On then
+						return
+					end
+					Item.AppliedOn = On
 					local Base = Segmented and (On and 0.9 or 1) or (On and 0.85 or 1)
 					if Segmented then
 						Creator.OverrideTag(Item.Frame, { BackgroundColor3 = "DropdownOption" })
@@ -17133,7 +20946,7 @@ ElementsTable.Dropdown = (function()
 					Creator.Tween(Item.Frame, 0.12, { BackgroundTransparency = Base })
 				end
 
-				Creator.AddSignal(Item.Frame.MouseButton1Click, function()
+				Creator.AddGuarded(Item.Frame, "MouseButton1Click", function()
 					Toggle(Value)
 				end)
 
@@ -17141,6 +20954,7 @@ ElementsTable.Dropdown = (function()
 				Item:Update(true)
 			end
 
+			ApplySort()
 			ApplyFilter()
 			Dropdown:Display()
 			task.defer(Resize)
@@ -17158,6 +20972,7 @@ ElementsTable.Dropdown = (function()
 			if SearchBox and SearchBox.Input.Text ~= "" then
 				SearchBox.Input.Text = ""
 			end
+			ApplySort()
 			ApplyFilter()
 			Resize()
 			Popup.Visible = true
@@ -17236,7 +21051,7 @@ ElementsTable.Dropdown = (function()
 		end
 
 		if Inner and not Segmented then
-			Creator.AddSignal(Inner.MouseButton1Click, function()
+			Creator.AddGuarded(Inner, "MouseButton1Click", function()
 				if Dropdown.Opened then
 					Dropdown.Close()
 				else
@@ -17246,6 +21061,9 @@ ElementsTable.Dropdown = (function()
 			Creator.AddSignal(Inner:GetPropertyChangedSignal("AbsolutePosition"), Place_)
 			Creator.AddSignal(PopupLayout:GetPropertyChangedSignal("AbsoluteContentSize"), Resize)
 			Creator.AddSignal(SearchBox.Input:GetPropertyChangedSignal("Text"), function()
+				if Dropdown.SortOrder == "Relevance" then
+					ApplySort()
+				end
 				ApplyFilter()
 				Resize()
 			end)
@@ -17309,6 +21127,7 @@ ElementsTable.Input = (function()
 	local Element = {}
 	Element.__index = Element
 	Element.__type = "Input"
+	Element.ClassType = "Input"
 
 	local Widths = {
 		Field = 170,
@@ -17361,7 +21180,6 @@ ElementsTable.Input = (function()
 			end
 
 			if Input.Numeric and Text:len() > 0 and not tonumber(Text) then
-				-- let the user type partial numbers ("-", ".") while live-typing
 				if not Input.Finished and Text:match("^%-?%.?$") then
 					return
 				end
@@ -17410,6 +21228,7 @@ ElementsTable.Keybind = (function()
 	local Element = {}
 	Element.__index = Element
 	Element.__type = "Keybind"
+	Element.ClassType = "Input"
 
 	local Modes = { Always = true, Toggle = true, Hold = true }
 
@@ -17581,7 +21400,7 @@ ElementsTable.Keybind = (function()
 			end)
 		end
 
-		Creator.AddSignal(Button.MouseButton1Click, function()
+		Creator.AddGuarded(Button, "MouseButton1Click", function()
 			task.spawn(Capture)
 		end)
 
@@ -17734,7 +21553,7 @@ local PickerKit = (function()
 			IgnoreDialog = true,
 		})
 		Button.Frame.Position = UDim2.fromOffset(X, Y)
-		Creator.AddSignal(Button.Frame.MouseButton1Click, Callback)
+		Creator.AddGuarded(Button.Frame, "MouseButton1Click", Callback)
 		return Button
 	end
 
@@ -17875,6 +21694,9 @@ local PickerKit = (function()
 		for Index = 1, 5 do
 			local Box = Components.Textbox(Dialog.Root, "Standard")
 			Box.Frame.Size = UDim2.fromOffset(60, 30)
+			Box.Container.Position = UDim2.fromOffset(4, 0)
+			Box.Container.Size = UDim2.new(1, -8, 1, 0)
+			Box.Input.TextXAlignment = Enum.TextXAlignment.Center
 			Boxes[Index] = Box
 			Captions[Index] = Label({
 				Text = "",
@@ -17895,7 +21717,7 @@ local PickerKit = (function()
 			HSB = { "", "H", "S", "B", "Alpha" },
 		}
 
-		local Weights = { Swatch and 3 or 2.2, 1, 1, 1, 1.3, 1.2 }
+		local Weights = { Swatch and 1.8 or 2.2, 1, 1, 1, 1.4 }
 		local SwatchCaption
 		if Swatch then
 			SwatchCaption = Label({
@@ -17912,7 +21734,7 @@ local PickerKit = (function()
 		function Fields:Layout()
 			local Slots
 			if self.Mode == "All" then
-				Slots = Swatch and { 1, 6, 2, 3, 4 } or { 1, 2, 3, 4 }
+				Slots = { 1, 2, 3, 4 }
 			elseif self.Mode == "Hex" then
 				Slots = { 1 }
 			else
@@ -17928,39 +21750,58 @@ local PickerKit = (function()
 			end
 
 			local Gap = 6
-			local Total = 0
-			for _, Slot in next, Slots do
-				Total += Weights[Slot]
-			end
 
-			local Free = Width - Gap * (#Slots - 1)
-			local Offset = X
-			if Swatch then
-				Swatch.Visible = false
-				SwatchCaption.Visible = false
-			end
-
-			for _, Slot in next, Slots do
-				local Cell = math.floor(Free * Weights[Slot] / Total)
-				if Slot == 6 then
-					Swatch.Position = UDim2.fromOffset(Offset, Y)
-					Swatch.Size = UDim2.fromOffset(Cell, 30)
-					Swatch.Visible = true
-					SwatchCaption.Position = UDim2.fromOffset(Offset, Y + 33)
-					SwatchCaption.Size = UDim2.fromOffset(Cell, 12)
-					SwatchCaption.Visible = true
-					Offset += Cell + Gap
-					continue
+			local function PlaceRun(Run, From, Span, Stretch)
+				local Total = 0
+				for _, Slot in next, Run do
+					Total += Weights[Slot]
 				end
-				Boxes[Slot].Frame.Position = UDim2.fromOffset(Offset, Y)
-				Boxes[Slot].Frame.Size = UDim2.fromOffset(Cell, 30)
-				Boxes[Slot].Frame.Visible = true
-				Captions[Slot].Position = UDim2.fromOffset(Offset, Y + 33)
-				Captions[Slot].Size = UDim2.fromOffset(Cell, 12)
-				Captions[Slot].Text = Titles[self.Mode][Slot]
-				Captions[Slot].Visible = true
-				Offset += Cell + Gap
+
+				local Free = Span - Gap * (#Run - 1)
+				local Offset = From
+				for Index, Slot in next, Run do
+					local Cell = math.floor(Free * Weights[Slot] / Total)
+					if Stretch and Index == #Run then
+						Cell = From + Span - Offset
+					end
+					Boxes[Slot].Frame.Position = UDim2.fromOffset(Offset, Y)
+					Boxes[Slot].Frame.Size = UDim2.fromOffset(Cell, 30)
+					Boxes[Slot].Frame.Visible = true
+					Captions[Slot].Position = UDim2.fromOffset(Offset, Y + 33)
+					Captions[Slot].Size = UDim2.fromOffset(Cell, 12)
+					Captions[Slot].Text = Titles[self.Mode][Slot]
+					Captions[Slot].Visible = true
+					Offset += Cell + Gap
+				end
 			end
+
+			if not Swatch then
+				PlaceRun(Slots, X, Width)
+				return
+			end
+
+			-- DO NOT shift the New slot off the center, both runs must keep the same Span
+			local SwatchW = 40
+			if (Width - SwatchW) % 2 ~= 0 then
+				SwatchW += 1
+			end
+			local Span = (Width - SwatchW) / 2 - Gap
+			local SwatchX = X + (Width - SwatchW) / 2
+
+			local Before, After = {}, {}
+			for _, Slot in next, Slots do
+				table.insert((Slot == 1 or Slot == 5) and Before or After, Slot)
+			end
+
+			PlaceRun(Before, X, Span, true)
+			PlaceRun(After, X + Width - Span, Span, true)
+
+			Swatch.Position = UDim2.fromOffset(SwatchX, Y)
+			Swatch.Size = UDim2.fromOffset(SwatchW, 30)
+			Swatch.Visible = true
+			SwatchCaption.Position = UDim2.fromOffset(SwatchX, Y + 33)
+			SwatchCaption.Size = UDim2.fromOffset(SwatchW, 12)
+			SwatchCaption.Visible = true
 		end
 
 		function Fields:Refresh()
@@ -18064,6 +21905,7 @@ ElementsTable.Colorpicker = (function()
 	local Element = {}
 	Element.__index = Element
 	Element.__type = "Colorpicker"
+	Element.ClassType = "Dialog"
 
 	local Checker = PickerKit.Checker
 	local MakeCaption = PickerKit.MakeCaption
@@ -18115,6 +21957,8 @@ ElementsTable.Colorpicker = (function()
 		local HexLabel
 		local HexInput
 		local Control
+		local ActiveDialog
+		local SyncMirror
 
 		if Variant == "Swatch" then
 			Control = Checker(nil, UDim2.fromOffset(28, 28), 8)
@@ -18272,6 +22116,7 @@ ElementsTable.Colorpicker = (function()
 		end
 
 		local function Finish(Dialog, Session)
+			ActiveDialog = Dialog
 			Dialog:Button("Done", function()
 				if not Session.Live then
 					Colorpicker:SetValue({ Session.Hue, Session.Sat, Session.Vib }, Session.Alpha)
@@ -18283,10 +22128,11 @@ ElementsTable.Colorpicker = (function()
 				end
 			end)
 			Dialog:Open()
+			SyncMirror()
 		end
 
 		local function OpenChromium()
-			local Dialog = Components.Dialog:Create({ Tags = DialogOptions.Tags, Anchor = Swatch })
+			local Dialog = Components.Dialog:Create({ Tags = DialogOptions.Tags, Anchor = Swatch, DoNotBlur = Config.DoNotBlur })
 			if Dialog.Ghost then
 				return
 			end
@@ -18334,12 +22180,11 @@ ElementsTable.Colorpicker = (function()
 		end
 
 		local function OpenFluent()
-			local Dialog = Components.Dialog:Create({ Tags = DialogOptions.Tags, Anchor = Swatch })
+			local Dialog = Components.Dialog:Create({ Tags = DialogOptions.Tags, Anchor = Swatch, DoNotBlur = Config.DoNotBlur })
 			if Dialog.Ghost then
 				return
 			end
 			local Session = MakeSession()
-			Session.Live = false
 			Dialog.Title.Text = Colorpicker.Title
 			Dialog.Root.Size = UDim2.fromOffset(440, 382)
 
@@ -18414,7 +22259,7 @@ ElementsTable.Colorpicker = (function()
 		end
 
 		local function OpenWheel()
-			local Dialog = Components.Dialog:Create({ Tags = DialogOptions.Tags, Anchor = Swatch })
+			local Dialog = Components.Dialog:Create({ Tags = DialogOptions.Tags, Anchor = Swatch, DoNotBlur = Config.DoNotBlur })
 			if Dialog.Ghost then
 				return
 			end
@@ -18510,6 +22355,45 @@ ElementsTable.Colorpicker = (function()
 			end
 		end
 
+		local Mirror
+		local MirrorFill
+
+		function SyncMirror()
+			local Blur = ActiveDialog and not ActiveDialog.Closing and ActiveDialog.Blur
+			local Layer = Blur and Blur.State.Layer
+			local Holder = Swatch.Parent
+			if not Layer or not Holder or not Holder:IsDescendantOf(game) then
+				return
+			end
+
+			if not Mirror or Mirror.Parent ~= Layer then
+				Mirror = Checker(Layer, UDim2.fromOffset(0, 0), 0)
+				Mirror.ZIndex = 4
+				MirrorFill = New("Frame", {
+					Size = UDim2.fromScale(1, 1),
+					ZIndex = 4,
+					Parent = Mirror,
+				}, {
+					Corner(0),
+				})
+				local HolderCorner = Holder:FindFirstChildOfClass("UICorner")
+				local SwatchCorner = Swatch:FindFirstChildOfClass("UICorner")
+				if HolderCorner then
+					Mirror:FindFirstChildOfClass("UICorner").CornerRadius = HolderCorner.CornerRadius
+				end
+				if SwatchCorner then
+					MirrorFill:FindFirstChildOfClass("UICorner").CornerRadius = SwatchCorner.CornerRadius
+				end
+			end
+
+			local Origin = Layer.AbsolutePosition
+			local Spot = Holder.AbsolutePosition
+			Mirror.Position = UDim2.fromOffset(Spot.X - Origin.X, Spot.Y - Origin.Y)
+			Mirror.Size = UDim2.fromOffset(Holder.AbsoluteSize.X, Holder.AbsoluteSize.Y)
+			MirrorFill.BackgroundColor3 = Swatch.BackgroundColor3
+			MirrorFill.BackgroundTransparency = Swatch.BackgroundTransparency
+		end
+
 		function Colorpicker:Display()
 			Colorpicker.Value = Color3.fromHSV(Colorpicker.Hue, Colorpicker.Sat, Colorpicker.Vib)
 
@@ -18521,6 +22405,7 @@ ElementsTable.Colorpicker = (function()
 			if HexInput and not HexInput:IsFocused() then
 				HexInput.Text = "#" .. Colorpicker.Value:ToHex():lower()
 			end
+			SyncMirror()
 
 			Library:SafeCallback(Colorpicker.Callback, Colorpicker.Value)
 			Library:SafeCallback(Colorpicker.Changed, Colorpicker.Value)
@@ -18549,7 +22434,7 @@ ElementsTable.Colorpicker = (function()
 			Library.Options[Idx] = nil
 		end
 
-		Creator.AddSignal(Row.Body.MouseButton1Click, Open)
+		Creator.AddGuarded(Row.Body, "MouseButton1Click", Open)
 
 		if HexInput then
 			Creator.AddSignal(HexInput.FocusLost, function()
@@ -18615,6 +22500,7 @@ ElementsTable.Progress = (function()
 	local Element = {}
 	Element.__index = Element
 	Element.__type = "Progress"
+	Element.ClassType = "Display"
 	Element.NoIdx = true
 
 	function Element:New(Config)
@@ -18757,6 +22643,7 @@ ElementsTable.CheckGroup = (function()
 	local Element = {}
 	Element.__index = Element
 	Element.__type = "CheckGroup"
+	Element.ClassType = "Input"
 
 	function Element:New(Idx, Config)
 		local Library = self.Library
@@ -18791,10 +22678,13 @@ ElementsTable.CheckGroup = (function()
 		local ItemHeight = 32
 		Row:SetExtra(Count * ItemHeight + 6)
 
+		local HoverPad = 8
+		local HoverInsetY = 2
+
 		local List = New("Frame", {
-			Size = UDim2.new(1, -(Row.LeftSpace + 14), 0, Count * ItemHeight),
+			Size = UDim2.new(1, -(Row.LeftSpace + 14) + HoverPad * 2, 0, Count * ItemHeight),
 			AnchorPoint = Vector2.new(0, 1),
-			Position = UDim2.new(0, Row.LeftSpace, 1, -6),
+			Position = UDim2.new(0, Row.LeftSpace - HoverPad, 1, -6),
 			BackgroundTransparency = 1,
 			Parent = Row.Content,
 		}, {
@@ -18808,18 +22698,20 @@ ElementsTable.CheckGroup = (function()
 		for Index, Name in next, Config.Options do
 			local Control
 			local Apply
+			local ControlWidth = 44
 
-			if Variant == "Switch" then
+			if Variant == "Switch" or Variant == "Simplefield" then
+				ControlWidth = 52
 				local Knob = New("Frame", {
-					Size = UDim2.fromOffset(12, 12),
+					Size = UDim2.fromOffset(14, 14),
 					AnchorPoint = Vector2.new(0, 0.5),
-					Position = UDim2.new(0, 2, 0.5, 0),
+					Position = UDim2.new(0, 3, 0.5, 0),
 					BackgroundColor3 = Color3.new(1, 1, 1),
 				}, {
 					Corner(999),
 				})
 				Control = New("Frame", {
-					Size = UDim2.fromOffset(30, 16),
+					Size = UDim2.fromOffset(36, 20),
 					AnchorPoint = Vector2.new(1, 0.5),
 					Position = UDim2.new(1, 0, 0.5, 0),
 					BackgroundTransparency = 0.72,
@@ -18833,7 +22725,7 @@ ElementsTable.CheckGroup = (function()
 				function Apply(Instant)
 					local On = Group.Value[Name]
 					Creator.OverrideTag(Control, { BackgroundColor3 = On and "ToggleToggled" or "ToggleSlider" })
-					local Goal = UDim2.new(0, On and 16 or 2, 0.5, 0)
+					local Goal = UDim2.new(0, On and 19 or 3, 0.5, 0)
 					if Instant then
 						Knob.Position = Goal
 						Control.BackgroundTransparency = On and 0 or 0.72
@@ -18898,22 +22790,30 @@ ElementsTable.CheckGroup = (function()
 				LayoutOrder = Index,
 				Parent = List,
 			}, {
-				Label({
-					Text = Name,
-					TextSize = 12.5,
-					Weight = "Medium",
-					Tag = "TextSecondary",
-					Size = UDim2.new(1, -44, 1, 0),
-					TextTruncate = Enum.TextTruncate.AtEnd,
+				New("Frame", {
+					Name = "Content",
+					Size = UDim2.new(1, -HoverPad * 2, 1, 0),
+					Position = UDim2.fromOffset(HoverPad, 0),
+					BackgroundTransparency = 1,
+				}, {
+					Label({
+						Text = Name,
+						TextSize = 12.5,
+						Weight = "Medium",
+						Tag = "TextSecondary",
+						Size = UDim2.new(1, -ControlWidth, 1, 0),
+						TextTruncate = Enum.TextTruncate.AtEnd,
+					}),
+					Control,
 				}),
-				Control,
 			})
 
-			Library.CreateItemHover(Item, { Radius = 8 })
+			Library.CreateItemHover(Item, { Radius = 8, InsetY = HoverInsetY })
 
 			if Index > 1 then
 				New("Frame", {
-					Size = UDim2.new(1, 0, 0, 1),
+					Size = UDim2.new(1, -HoverPad * 2, 0, 1),
+					Position = UDim2.fromOffset(HoverPad, 0),
 					BackgroundTransparency = 0.94,
 					Parent = Item,
 					ThemeTag = {
@@ -18925,7 +22825,7 @@ ElementsTable.CheckGroup = (function()
 			Visuals[Name] = Apply
 			Apply(true)
 
-			Creator.AddSignal(Item.MouseButton1Click, function()
+			Creator.AddGuarded(Item, "MouseButton1Click", function()
 				Group:SetOption(Name, not Group.Value[Name])
 			end)
 		end
@@ -18975,6 +22875,7 @@ ElementsTable.CardPicker = (function()
 	local Element = {}
 	Element.__index = Element
 	Element.__type = "CardPicker"
+	Element.ClassType = "Input"
 
 	function Element:New(Idx, Config)
 		local Library = self.Library
@@ -19185,7 +23086,7 @@ ElementsTable.CardPicker = (function()
 					}),
 				})
 				Entry.Delete = Delete
-				Creator.AddSignal(Delete.MouseButton1Click, function()
+				Creator.AddGuarded(Delete, "MouseButton1Click", function()
 					Library:SafeCallback(Item.OnDelete, Item.Id)
 				end)
 			end
@@ -19202,7 +23103,7 @@ ElementsTable.CardPicker = (function()
 					Entry.Delete.Visible = false
 				end
 			end)
-			Creator.AddSignal(Card.MouseButton1Click, function()
+			Creator.AddGuarded(Card, "MouseButton1Click", function()
 				if Item.Add then
 					Library:SafeCallback(Config.OnAdd or Item.OnClick, Item)
 				else
@@ -19316,6 +23217,7 @@ ElementsTable.Viewport = (function()
 	local Element = {}
 	Element.__index = Element
 	Element.__type = "Viewport"
+	Element.ClassType = "Display"
 
 	type Orbit = {
 		Yaw: number,
@@ -19833,7 +23735,7 @@ ElementsTable.Viewport = (function()
 				return
 			end
 
-			AutoConnection = Track(RunService.Heartbeat, function(DeltaTime: number)
+			AutoConnection = Track(Heartbeat, function(DeltaTime: number)
 				if IsDragging or IsPinching or not Viewport.Object or not IsShown() then
 					return
 				end
@@ -19990,6 +23892,9 @@ ElementsTable.Viewport = (function()
 			if InputType ~= Enum.UserInputType.MouseButton1 and InputType ~= Enum.UserInputType.Touch then
 				return
 			end
+			if not Creator.AcceptsInput(ZoomPill, Input) then
+				return
+			end
 			ZoomDragging = true
 			SetScrolling(false)
 			Creator.Tween(ZoomThumb, 0.12, { Size = UDim2.fromOffset(24, 14) })
@@ -20007,7 +23912,7 @@ ElementsTable.Viewport = (function()
 		end)
 
 		Track(ZoomPill.InputChanged, function(Input: InputObject)
-			if Input.UserInputType == Enum.UserInputType.MouseWheel then
+			if Input.UserInputType == Enum.UserInputType.MouseWheel and Creator.AcceptsInput(ZoomPill, Input) then
 				StepZoom(Input.Position.Z)
 			end
 		end)
@@ -20049,7 +23954,7 @@ ElementsTable.Viewport = (function()
 		end)
 
 		Track(ViewportFrame.InputBegan, function(Input: InputObject)
-			if not Viewport.Interactive then
+			if not Viewport.Interactive or not Creator.AcceptsInput(ViewportFrame, Input) then
 				return
 			end
 
@@ -20120,7 +24025,11 @@ ElementsTable.Viewport = (function()
 		end)
 
 		Track(ViewportFrame.InputChanged, function(Input: InputObject)
-			if Viewport.Interactive and Input.UserInputType == Enum.UserInputType.MouseWheel then
+			if
+				Viewport.Interactive
+				and Input.UserInputType == Enum.UserInputType.MouseWheel
+				and Creator.AcceptsInput(ViewportFrame, Input)
+			then
 				IdleClock = os.clock()
 				Zoom(1 - Input.Position.Z * WheelStep)
 			end
@@ -20132,7 +24041,8 @@ ElementsTable.Viewport = (function()
 			end
 
 			if State == Enum.UserInputState.Begin then
-				if not IsInside((Positions[1] + Positions[2]) / 2) then
+				local Middle = (Positions[1] + Positions[2]) / 2
+				if not IsInside(Middle) or Creator.IsOccluded(ViewportFrame, Middle) then
 					return
 				end
 				IsPinching = true
@@ -20347,6 +24257,7 @@ ElementsTable.Space = (function()
 	local Element = {}
 	Element.__index = Element
 	Element.__type = "Space"
+	Element.ClassType = "Layout"
 	Element.NoIdx = true
 
 	function Element:SetHeight(Value)
@@ -20408,6 +24319,7 @@ ElementsTable.Group = (function()
 	local Element = {}
 	Element.__index = Element
 	Element.__type = "Group"
+	Element.ClassType = "Layout"
 	Element.NoIdx = true
 
 	local Methods = {}
@@ -20710,6 +24622,7 @@ ElementsTable.Banner = (function()
 	local Element = {}
 	Element.__index = Element
 	Element.__type = "Banner"
+	Element.ClassType = "Display"
 
 	local Gap = 8
 	local FooterHeight = 14
@@ -21368,7 +25281,7 @@ ElementsTable.Banner = (function()
 			Holder:QueueRefresh()
 		end)
 
-		Creator.AddSignal(Hit.MouseButton1Click, function()
+		Creator.AddGuarded(Hit, "MouseButton1Click", function()
 			Library:SafeCallback(Banner.Callback, Banner)
 		end)
 
@@ -21716,7 +25629,7 @@ function IntroModule.WaitShown()
 
 	local Deadline = os.clock() + IntroSettings.ShownTimeout
 	while IntroModule.Active and not IntroModule.Shown and os.clock() < Deadline do
-		RunService.Heartbeat:Wait()
+		Heartbeat:Wait()
 	end
 end
 
@@ -21861,7 +25774,7 @@ function IntroModule.Start(Options: IntroOptions)
 	local Progress = 0
 	local FillStart = 0
 
-	IntroModule.Connection = RunService.Heartbeat:Connect(function(Delta: number)
+	IntroModule.Connection = Heartbeat:Connect(function(Delta: number)
 		if Library.Unloaded then
 			IntroModule.Cleanup()
 			return
@@ -21969,6 +25882,7 @@ function Library:CreateWindow(Config)
 	Library.NavPosition = Config.NavPosition or "Top"
 	Library.UseAcrylic = Config.Acrylic == true
 	Library.Acrylic = Library.UseAcrylic
+	Library.BlurEnabled = Config.UiBlur ~= false
 	Library.AcrylicPanelAlpha = if Config.AcrylicPanelTransparency ~= nil
 		then math.clamp(tonumber(Config.AcrylicPanelTransparency) or 0, 0, 0.9)
 		else nil
@@ -22061,6 +25975,76 @@ function Library:SetTheme(Value)
 	end
 	Library.Theme = Value
 	Creator.UpdateTheme(RefreshAfterTheme)
+end
+
+function Library:AuditTheme(Silent: boolean?)
+	local Active = ThemeResolver.Resolve(Library.Theme, Library.ThemeMode) or Themes.Dark
+	local Known = {}
+	for _, Name in next, Library.Themes do
+		local Data = Themes[Name]
+		if Data then
+			for Key, Value in next, Data do
+				if typeof(Value) == "Color3" then
+					local Hex = Value:ToHex()
+					if Hex ~= "FFFFFF" and Hex ~= "000000" then
+						Known[Hex] = Key
+					end
+				end
+			end
+		end
+	end
+
+	local Mismatched = {}
+	for Object, Data in next, Creator.Registry do
+		if Object.Parent then
+			for Property, Key in next, Data.Properties do
+				local Expected = Active[Key]
+				local Ok, Current = pcall(function()
+					return (Object :: any)[Property]
+				end)
+				if Ok and typeof(Expected) == "Color3" and typeof(Current) == "Color3" and Current ~= Expected then
+					table.insert(Mismatched, `{Object:GetFullName()}.{Property} -> {Key}`)
+				end
+			end
+		end
+	end
+
+	local Untagged = {}
+	local Root = Library.GUI
+	if Root then
+		for _, Object in next, Root:GetDescendants() do
+			if not Creator.Registry[Object] then
+				local Properties = {}
+				if Object:IsA("TextLabel") or Object:IsA("TextButton") or Object:IsA("TextBox") then
+					table.insert(Properties, "TextColor3")
+				end
+				if Object:IsA("ImageLabel") or Object:IsA("ImageButton") then
+					table.insert(Properties, "ImageColor3")
+				end
+				if Object:IsA("GuiObject") and Object.BackgroundTransparency < 1 then
+					table.insert(Properties, "BackgroundColor3")
+				end
+				if Object:IsA("UIStroke") then
+					table.insert(Properties, "Color")
+				end
+				for _, Property in next, Properties do
+					local Value = (Object :: any)[Property]
+					if typeof(Value) == "Color3" then
+						local Key = Known[Value:ToHex()]
+						if Key then
+							table.insert(Untagged, `{Object:GetFullName()}.{Property} ~ {Key}`)
+						end
+					end
+				end
+			end
+		end
+	end
+
+	if not Silent then
+		Library:Alert(`AuditTheme: {#Mismatched} registered objects differ from the active theme, {#Untagged} untagged objects use theme colors`)
+	end
+
+	return { Mismatched = Mismatched, Untagged = Untagged }
 end
 
 function Library:SetColorfulIcons(Value)
@@ -22480,6 +26464,26 @@ function Library:ToggleTransparency(Value)
 	end
 end
 
+Library.InternalMuted = false
+
+function Library:MuteInternal(State: boolean?)
+	Library.InternalMuted = State ~= false
+end
+
+function Library:InternalNotify(Config)
+	if Library.InternalMuted then
+		return nil
+	end
+	return Library:Notify(Config)
+end
+
+function Library:InternalToast(Config: any, Duration: number?): any
+	if Library.InternalMuted then
+		return nil
+	end
+	return Library:Toast(Config, Duration)
+end
+
 function Library:Notify(Config)
 	if IntroModule.Active then
 		table.insert(IntroModule.Queue, Config)
@@ -22499,9 +26503,18 @@ function Library:Toast(Config: any, Duration: number?): any
 	return ToastModule:New(Config)
 end
 
+Library.AlertTimes = {}
+
 function Library:Alert(Message, Kind)
+	local Key = tostring(Message)
+	local Now = os.clock()
+	local Last = Library.AlertTimes[Key]
+	if Last and Now - Last < 5 then
+		return nil
+	end
+	Library.AlertTimes[Key] = Now
 	local Success, Result = pcall(function()
-		return Library:Notify({
+		return Library:InternalNotify({
 			Title = "Interface",
 			Content = Kind == "Error" and "Error" or "Warning",
 			SubContent = tostring(Message),
@@ -22806,6 +26819,7 @@ end
 
 local AssetService = GetService("AssetService")
 
+-- Animated Background Made by my Tunisian friend
 local BackgroundManager = {
 	Active = "none",
 	Scope = "Whole window",
@@ -22983,8 +26997,263 @@ function BackgroundManager:Reapply()
 	end
 end
 
+function BackgroundManager:EffectiveBlur()
+	local Target = math.max(self.Blur, self.DialogBlur or 10)
+	return self.Blur + (Target - self.Blur) * (self.DialogMix or 0)
+end
+
+function BackgroundManager:UiCovered()
+	local Base, Top = self.UiBase, self.UiTop
+	if not self.UiReady or not Base or not Top or self.Suspended then
+		return false
+	end
+	if self.Blur > 0 and Base:IsReady() then
+		return true
+	end
+	if (self.DialogMix or 0) >= 0.999 and Top:IsReady() then
+		return true
+	end
+	return false
+end
+
+function BackgroundManager:WatchUi()
+	if self.UiWatching then
+		return
+	end
+	self.UiWatching = true
+	task.spawn(function()
+		local Waited = 0
+		while self.UiMode and Waited < 3 and not self:UiCovered() do
+			Waited += task.wait()
+		end
+		self.UiWatching = false
+		if self.UiMode and Waited < 3 then
+			self:SyncUiBlur()
+		end
+	end)
+end
+
+function BackgroundManager:SyncUiBlur()
+	local Holder, Base, Top = self.UiHolder, self.UiBase, self.UiTop
+	if not Holder then
+		return
+	end
+	local Strength = math.clamp(self.Strength * (self.SourceOpacity or 1), 0, 1)
+	Holder.Visible = self.UiMode == true
+	Holder.GroupTransparency = 1 - Strength
+	if not self.UiMode or not Base or not Top then
+		return
+	end
+	local Mix = self.DialogMix or 0
+	local Active = not self.Suspended
+	Base:Set({
+		Blur = self.Blur,
+		Opacity = if self.Blur > 0 and Active then 1 else 0,
+	})
+	Top:Set({
+		Blur = math.max(self.Blur, self.DialogBlur or 10),
+		Opacity = if Active then Mix else 0,
+	})
+	if Base.Enabled ~= Active then
+		Base.Enabled = Active
+	end
+	if Top.Enabled ~= Active then
+		Top.Enabled = Active
+	end
+	local Covered = self:UiCovered()
+	self.Image.ImageTransparency = if Covered then 1 else 1 - Strength
+	if not Covered and self.UiReady and Active and (self.Blur > 0 or Mix >= 0.999) then
+		self:WatchUi()
+	end
+end
+
+function BackgroundManager:HideUi()
+	self.UiMode = false
+	if self.UiHolder then
+		self.UiHolder.Visible = false
+	end
+end
+
+function BackgroundManager:BuildUiBlur()
+	self.UiToken = (self.UiToken or 0) + 1
+	local Token = self.UiToken
+	task.spawn(function()
+		local Source
+		local Reason
+		local Tries = 0
+		while self.UiToken == Token do
+			task.wait(if Tries == 0 then 0.05 else 0.3)
+			if self.UiToken ~= Token then
+				return
+			end
+			Source, Reason = UiBlur.FromImage(self.Image, { MaxSize = 384 })
+			if Source or Reason ~= "size" or Tries >= 20 then
+				break
+			end
+			Tries += 1
+		end
+		if self.UiToken ~= Token then
+			if Source then
+				Source:Destroy()
+			end
+			return
+		end
+		if not Source then
+			if Reason == "pixels" then
+				self.UiBad = self.UiBad or {}
+				self.UiBad[self.UiUrl] = true
+				self.UiKey = nil
+				self.UiReady = false
+				self:Reapply()
+			end
+			return
+		end
+
+		local Size = self.Image.AbsoluteSize
+		self.UiAspect = Size.X / math.max(Size.Y, 1)
+		local Old = self.UiSource
+		self.UiSource = Source
+		if not self.UiBase then
+			self.UiBase = UiBlur.new()
+			self.UiTop = UiBlur.new()
+			for _, Element in { self.UiBase, self.UiTop } do
+				Element:Set({ Parent = self.UiHolder, Opacity = 0 })
+			end
+		end
+		self.UiBase.Backdrop = Source
+		self.UiTop.Backdrop = Source
+		if Old then
+			task.delay(0.4, function()
+				Old:Destroy()
+			end)
+		end
+		self:SyncUiBlur()
+
+		local Waited = 0
+		while self.UiToken == Token and Waited < 3 and not (self.UiBase:IsReady() and self.UiTop:IsReady()) do
+			Waited += task.wait()
+		end
+		if self.UiToken == Token then
+			self.UiReady = true
+			self:SyncUiBlur()
+		end
+	end)
+end
+
+function BackgroundManager:EnsureUiBlur(Url, ScaleType)
+	if not self.UiHolder then
+		self.UiHolder = New("CanvasGroup", {
+			Name = "UiBlurHolder",
+			Size = UDim2.fromScale(1, 1),
+			BackgroundTransparency = 1,
+			ZIndex = 1,
+			Visible = false,
+			Parent = self.Layer,
+		})
+	end
+	local Key = Url .. "|" .. tostring(ScaleType)
+	if self.UiKey == Key then
+		return
+	end
+	if self.UiUrl ~= Url then
+		self.UiReady = false
+	end
+	self.UiKey = Key
+	self.UiUrl = Url
+	self:BuildUiBlur()
+end
+
+function BackgroundManager:CheckUiAspect(Aspect)
+	if not self.UiKey or not self.UiAspect or math.abs(Aspect / self.UiAspect - 1) < 0.02 then
+		return
+	end
+	self.UiAspect = Aspect
+	self.UiRebuild = (self.UiRebuild or 0) + 1
+	local Id = self.UiRebuild
+	task.delay(0.25, function()
+		if self.UiRebuild == Id and self.UiMode then
+			self:BuildUiBlur()
+		end
+	end)
+end
+
+function BackgroundManager:FollowDialog(Active, Duration)
+	local Target = if Active then 1 else 0
+	self.FollowToken = (self.FollowToken or 0) + 1
+	local Token = self.FollowToken
+	local Start = self.DialogMix or 0
+	if Start == Target then
+		return
+	end
+	if not Duration or Duration <= 0 then
+		self.DialogMix = Target
+		self:ApplyMix()
+		return
+	end
+	task.spawn(function()
+		local Elapsed = 0
+		while self.FollowToken == Token do
+			Elapsed += PreRender:Wait()
+			local Progress = math.min(Elapsed / Duration, 1)
+			local Alpha = TweenService:GetValue(Progress, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+			self.DialogMix = Start + (Target - Start) * Alpha
+			self:ApplyMix()
+			if Progress >= 1 then
+				break
+			end
+		end
+	end)
+end
+
+function BackgroundManager:ApplyMix()
+	if not self.Layer or self.SourceUrl == nil or not self.Image.Visible then
+		return
+	end
+	if self.UiMode then
+		self:SyncUiBlur()
+		return
+	end
+	local Blurred = self:EffectiveBlur() > 0 and not self.Suspended
+	local Stacked = self.Stack ~= nil and self.Stack.Visible
+	if Blurred ~= Stacked then
+		self:Reapply()
+	else
+		self:ApplyImageLayout()
+	end
+end
+
+function BackgroundManager:SyncVideo()
+	local Video = self.Video
+	if not Video then
+		return
+	end
+	if self.DialogActive then
+		if Video.Playing then
+			Video.Playing = false
+		end
+		local Frozen = self.VideoTime
+		if Frozen and math.abs(Video.TimePosition - Frozen) > 0.05 then
+			Video.TimePosition = Frozen
+		end
+	else
+		Video.Playing = Video.Visible
+	end
+end
+
+function BackgroundManager:SetDialogActive(Active)
+	Active = Active and true or false
+	if self.DialogActive == Active then
+		return
+	end
+	self.DialogActive = Active
+	if Active and self.Video then
+		self.VideoTime = self.Video.TimePosition
+	end
+	self:SyncVideo()
+end
+
 function BackgroundManager:Suspend(Seconds)
-	if self.Blur <= 0 then
+	if self:EffectiveBlur() <= 0 then
 		return
 	end
 	self.ResumeAt = os.clock() + Seconds
@@ -23000,6 +27269,38 @@ function BackgroundManager:Suspend(Seconds)
 		self.Suspended = false
 		self:Reapply()
 	end)
+end
+
+function BackgroundManager:BeginFollow(Value)
+	local Layer = self.Layer
+	if not Layer or self.Scope ~= "Content only" or self.LayoutKey ~= "C" or not Layer.Visible then
+		self.Following = nil
+		return
+	end
+	local Left = Layer.Position.X.Offset
+	self.Following = {
+		Gap = Left - Value,
+		Right = self.Window.Root.AbsoluteSize.X - Left - Layer.Size.X.Offset,
+	}
+end
+
+function BackgroundManager:Follow(Value)
+	local Follow = self.Following
+	local Layer = self.Layer
+	if not Follow or not Layer then
+		return
+	end
+	local Left = Value + Follow.Gap
+	local Width = math.max(self.Window.Root.AbsoluteSize.X - Left - Follow.Right, 0)
+	Layer.Position = UDim2.fromOffset(Left, Layer.Position.Y.Offset)
+	Layer.Size = UDim2.fromOffset(Width, Layer.Size.Y.Offset)
+end
+
+function BackgroundManager:EndFollow()
+	if self.Following then
+		self.Following = nil
+		self.LayoutKey = nil
+	end
 end
 
 function BackgroundManager:UnpinLayer()
@@ -23071,7 +27372,7 @@ function BackgroundManager:PlayAnimation(Item)
 			return AssetService:CreateEditableImage({ Size = Vector2.new(Decoded.Width, Decoded.Height) })
 		end)
 		if not Created or not Editable then
-			Library:Notify({
+			Library:InternalNotify({
 				Title = "Background",
 				Content = "Animated backgrounds need EditableImage support, which this executor does not expose.",
 				Duration = 5,
@@ -23096,8 +27397,8 @@ function BackgroundManager:PlayAnimation(Item)
 		local Flip = false
 		local Count = Decoded.Count
 		local Step = 1 / math.max(Decoded.FPS, 1)
-		self.AnimConnection = RunService.Heartbeat:Connect(function(Delta)
-			if os.clock() < (self.AnimHoldUntil or 0) then
+		self.AnimConnection = Heartbeat:Connect(function(Delta)
+			if self.DialogActive or os.clock() < (self.AnimHoldUntil or 0) then
 				return
 			end
 			local Win = self.Window
@@ -23137,7 +27438,7 @@ function BackgroundManager:PlayAnimation(Item)
 		if not Data then
 			self.AnimLoading = false
 			self.AnimItem = nil
-			Library:Notify({
+			Library:InternalNotify({
 				Title = "Background",
 				Content = "Frame file could not be loaded.",
 				Duration = 4,
@@ -23181,7 +27482,7 @@ function BackgroundManager:PlayAnimation(Item)
 		self.AnimLoading = false
 		if not Buffers[1] then
 			self.AnimItem = nil
-			Library:Notify({
+			Library:InternalNotify({
 				Title = "Background",
 				Content = "Frame data is not in a supported format.",
 				Duration = 4,
@@ -23269,6 +27570,22 @@ function BackgroundManager:SetCorners(TopLeft, TopRight, BottomLeft, BottomRight
 	Corner.TopRightRadius = UDim.new(0, TopRight)
 	Corner.BottomLeftRadius = UDim.new(0, BottomLeft)
 	Corner.BottomRightRadius = UDim.new(0, BottomRight)
+	self:SyncShadeCorner()
+end
+
+function BackgroundManager:SyncShadeCorner()
+	local Window = self.Window
+	local ShadeCorner = Window and Window.ShadeCorner
+	local Corner = self.Corner
+	if not ShadeCorner or not Corner then
+		return
+	end
+	local Active = self.Scope == "Content only" and self.Layer ~= nil and self.Layer.Visible
+	local Zero = UDim.new(0, 0)
+	ShadeCorner.TopLeftRadius = Active and Corner.TopLeftRadius or Zero
+	ShadeCorner.TopRightRadius = Active and Corner.TopRightRadius or Zero
+	ShadeCorner.BottomLeftRadius = Active and Corner.BottomLeftRadius or Zero
+	ShadeCorner.BottomRightRadius = Active and Corner.BottomRightRadius or Zero
 end
 
 function BackgroundManager:SetRadius(Value)
@@ -23348,6 +27665,14 @@ function BackgroundManager:BuildBlurStack()
 		Visible = false,
 		Parent = self.Layer,
 	})
+	self.BlurBase = New("ImageLabel", {
+		Size = UDim2.fromScale(1, 1),
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		BackgroundTransparency = 1,
+		ZIndex = 1,
+		Parent = self.Stack,
+	})
 	self.Samples = {}
 	local Index = 0
 	for _, Ring in BlurRings do
@@ -23372,7 +27697,7 @@ function BackgroundManager:BuildBlurStack()
 end
 
 function BackgroundManager:GetBlurRadius()
-	return self.Blur * 0.8
+	return self:EffectiveBlur() * 0.8
 end
 
 function BackgroundManager:ApplyImageLayout()
@@ -23385,15 +27710,22 @@ function BackgroundManager:ApplyImageLayout()
 	local Radius = self:GetBlurRadius()
 	local Scale = self.Zoom
 	local Needed = math.max((math.abs(self.OffsetX) + Radius) / Width, (math.abs(self.OffsetY) + Radius) / Height)
-	Scale = math.max(Scale, 1 + 2 * Needed)
+	if not self.UiMode then
+		Scale = math.max(Scale, 1 + 2 * Needed)
+	end
 	local ImageSize = UDim2.fromScale(Scale, Scale)
 	self.Image.Size = ImageSize
 	self.Image.Position = UDim2.new(0.5, self.OffsetX, 0.5, self.OffsetY)
 	if self.Stack and self.Stack.Visible then
+		self.BlurBase.Size = ImageSize
+		self.BlurBase.Position = UDim2.new(0.5, self.OffsetX, 0.5, self.OffsetY)
 		for _, Sample in self.Samples do
 			Sample.Image.Size = ImageSize
 			Sample.Image.Position = UDim2.new(0.5, self.OffsetX + Sample.X * Radius, 0.5, self.OffsetY + Sample.Y * Radius)
 		end
+	end
+	if self.UiMode then
+		self:CheckUiAspect(Width / Height)
 	end
 end
 
@@ -23411,7 +27743,9 @@ function BackgroundManager:ApplyImage(Url, Opacity, Live)
 	local ScaleType = FitTypes[self.Fit] or Enum.ScaleType.Crop
 	local Image = self.Image
 	local Key = if Live then self.AnimToken else Url
-	local Blurred = self.Blur > 0 and not self.Suspended
+	local Blurred = self:EffectiveBlur() > 0 and not self.Suspended
+	local UseUi = not Live and Url ~= "" and not (self.UiBad and self.UiBad[Url])
+	self.UiMode = UseUi
 
 	Image.Visible = true
 	Image.ScaleType = ScaleType
@@ -23421,15 +27755,35 @@ function BackgroundManager:ApplyImage(Url, Opacity, Live)
 		AssignSource(Image, Url, Live)
 	end
 
-	if Blurred then
+	if UseUi then
+		if self.Stack then
+			self.Stack.Visible = false
+		end
+		if Image.Parent ~= self.Layer then
+			Image.Parent = self.Layer
+		end
+		Image.ImageTransparency = 1 - Strength
+		self:EnsureUiBlur(Url, ScaleType)
+		self:SyncUiBlur()
+	elseif Blurred then
+		self:HideUi()
 		self:BuildBlurStack()
-		if Image.Parent ~= self.Stack then
-			Image.Parent = self.Stack
+		if Image.Parent ~= self.Layer then
+			Image.Parent = self.Layer
 		end
 		self.Stack.Visible = true
 		self.StackBase = 1 - Strength
 		self.Stack.GroupTransparency = self.StackBase
-		Image.ImageTransparency = 0
+		Image.ImageTransparency = 1
+		local Base = self.BlurBase
+		Base.Visible = true
+		Base.ScaleType = ScaleType
+		Base.TileSize = Image.TileSize
+		Base.ImageTransparency = 0
+		if self.BlurKey ~= Key then
+			self.BlurKey = Key
+			AssignSource(Base, Url, Live)
+		end
 		for _, Sample in self.Samples do
 			local Copy = Sample.Image
 			Copy.Visible = true
@@ -23441,6 +27795,7 @@ function BackgroundManager:ApplyImage(Url, Opacity, Live)
 			end
 		end
 	else
+		self:HideUi()
 		if self.Stack then
 			self.Stack.Visible = false
 		end
@@ -23460,6 +27815,7 @@ end
 function BackgroundManager:HideImage()
 	self.SourceUrl = nil
 	self.Image.Visible = false
+	self:HideUi()
 	if self.Stack then
 		self.Stack.Visible = false
 	end
@@ -23507,13 +27863,21 @@ function BackgroundManager:Refresh()
 				})
 			end)
 			self.Video = Ok and Video or nil
+			if self.Video then
+				local Guarded = self.Video
+				Creator.AddSignal(Guarded:GetPropertyChangedSignal("Playing"), function()
+					if self.DialogActive and Guarded.Playing then
+						Guarded.Playing = false
+					end
+				end)
+			end
 		end
 		if self.Video then
 			self.Video.Visible = true
 			if self.Video.Video ~= Url then
 				self.Video.Video = Url
 			end
-			self.Video.Playing = true
+			self:SyncVideo()
 			if self.VideoUrl ~= Url then
 				self.VideoUrl = Url
 				self.VideoToken = (self.VideoToken or 0) + 1
@@ -23527,7 +27891,7 @@ function BackgroundManager:Refresh()
 					if Token ~= self.VideoToken or not Video.Parent or Video.IsLoaded then
 						return
 					end
-					Library:Notify({
+					Library:InternalNotify({
 						Title = "Background",
 						Content = "This video could not be loaded. Roblox only plays videos uploaded to Roblox (rbxassetid) and cannot decode local mp4 or webm files. Convert it to an animated .lua file instead.",
 						Duration = 8,
@@ -23575,6 +27939,7 @@ function BackgroundManager:Refresh()
 		DimAlpha = 1 - 0.28 * self.Strength * Opacity
 	end
 	self.Dim.BackgroundTransparency = DimAlpha
+	self:SyncShadeCorner()
 
 	for _, Hook in next, self.Hooks do
 		pcall(Hook)
@@ -24277,7 +28642,7 @@ local InterfaceManager = {} do
 				local Style = FontStyle.Value or "Normal"
 				local Ok, Result = LibraryObject:LoadFontFile(Path, Typed ~= "" and Typed or nil, Weight, Style)
 				if not Ok then
-					LibraryObject:Notify({ Title = "Font", Content = tostring(Result), Duration = 5 })
+					LibraryObject:InternalNotify({ Title = "Font", Content = tostring(Result), Duration = 5 })
 					return
 				end
 				for Index, Entry in next, Settings.LocalFonts do
@@ -24584,7 +28949,7 @@ local InterfaceManager = {} do
 				local Text = SourceInput.Textbox.Input.Text
 				local Ok, Result = BackgroundManager:AddSource(Text)
 				if not Ok then
-					LibraryObject:Notify({ Title = "Background", Content = tostring(Result), Duration = 5 })
+					LibraryObject:InternalNotify({ Title = "Background", Content = tostring(Result), Duration = 5 })
 					return
 				end
 				Picker:AddItem(CustomItem(Result))
@@ -25052,7 +29417,7 @@ local InterfaceManager = {} do
 					Content = "Restore all interface settings to their defaults? This cannot be undone.",
 					Buttons = {
 						{
-							Title = "Reset",
+							Title = "Yes, Reset Appearance",
 							Variant = "Danger",
 							Callback = function()
 								for Key, Value in next, self.Defaults do
@@ -25066,7 +29431,7 @@ local InterfaceManager = {} do
 								self:ApplySettings()
 								self:SyncControls()
 								self:SaveSettingsNow()
-								LibraryObject:Notify({
+								LibraryObject:InternalNotify({
 									Title = "Interface",
 									Content = "Appearance restored to defaults.",
 									Duration = 4,
@@ -25074,7 +29439,7 @@ local InterfaceManager = {} do
 							end,
 						},
 						{
-							Title = "Cancel",
+							Title = "No, Keep Settings",
 						},
 					},
 				})
@@ -25382,14 +29747,14 @@ local SaveManager = {} do
 		local Name = readfile(AutoloadFile)
 		local Success, Problem = self:Load(Name)
 		if not Success then
-			return self.Library:Notify({
+			return self.Library:InternalNotify({
 				Title = "Configs",
 				Content = "Autoload failed: " .. Problem,
 				Duration = 6,
 			})
 		end
 
-		self.Library:Notify({
+		self.Library:InternalNotify({
 			Title = "Configs",
 			Content = string.format("Autoloaded %q", Name),
 			Duration = 4,
@@ -25405,7 +29770,7 @@ local SaveManager = {} do
 		local AutoloadButton
 
 		local function Notify(Text)
-			Library:Notify({
+			Library:InternalNotify({
 				Title = "Configs",
 				Content = Text,
 				Duration = 5,
@@ -25417,8 +29782,8 @@ local SaveManager = {} do
 				Title = Title,
 				Content = Content,
 				Buttons = {
-					{ Title = Label, Variant = "Danger", Callback = Action },
-					{ Title = "Cancel" },
+					{ Title = "Yes, " .. Label, Variant = "Danger", Callback = Action },
+					{ Title = "No, Keep Config" },
 				},
 			})
 		end
@@ -25500,7 +29865,7 @@ local SaveManager = {} do
 					return Confirm(
 						"Overwrite config",
 						string.format("%q already exists. Replace it with your current settings?", Name),
-						"Overwrite",
+						"Overwrite Config",
 						Create
 					)
 				end
@@ -25537,7 +29902,7 @@ local SaveManager = {} do
 					Confirm(
 						"Overwrite config",
 						string.format("Replace %q with your current settings?", Name),
-						"Overwrite",
+						"Overwrite Config",
 						function()
 							local Success, Problem = self:Save(Name)
 							if not Success then
@@ -25561,7 +29926,7 @@ local SaveManager = {} do
 					Confirm(
 						"Delete config",
 						string.format("Delete %q? This cannot be undone.", Name),
-						"Delete",
+						"Delete Config",
 						function()
 							local Success, Problem = self:Delete(Name)
 							if not Success then
@@ -25619,6 +29984,7 @@ SaveManager.Library = Library
 SaveManager.Options = Library.Options
 InterfaceManager.Library = Library
 
+-- Important thing if you want to create custom objects in this UI Library
 export type Dict = { [string]: any }
 export type Callback = (...any) -> ()
 
@@ -25636,6 +30002,7 @@ export type ElementDefinition = {
 	Defaults: Dict?,
 	Hover: boolean?,
 	NoIdx: boolean?,
+	ClassType: string?,
 	TitleOptional: boolean?,
 	Save: (boolean | SaveSpec)?,
 	BeforeDestroy: ((Object: any) -> ())?,
@@ -26200,12 +30567,22 @@ do
 		}, Api)
 	end
 
+	local function JoinArguments(...: any): string
+		local Parts = {}
+		for Index = 1, select("#", ...) do
+			Parts[Index] = tostring((select(Index, ...)))
+		end
+		return table.concat(Parts, " ")
+	end
+
 	function Api:Log(...: any)
-		print(`[{self.Id}]`, ...)
+		if Extension.Config.Debug then
+			Library:Alert(`[{self.Id}] {JoinArguments(...)}`)
+		end
 	end
 
 	function Api:Warn(...: any)
-		warn(`[{self.Id}]`, ...)
+		Library:Alert(`[{self.Id}] {JoinArguments(...)}`)
 	end
 
 	function Api:Report(Problem: any)
@@ -26251,7 +30628,7 @@ do
 	end
 
 	function Api:Heartbeat(Callback: (DeltaTime: number) -> ()): any
-		return self:Connect(RunService.Heartbeat, Callback)
+		return self:Connect(Heartbeat, Callback)
 	end
 
 	function Api:Spawn(Callback: Callback, ...: any): thread
@@ -26640,7 +31017,7 @@ do
 			local Entry = self.Items[Index]
 			local Success, Problem = pcall(Release, Entry.Item)
 			if not Success then
-				warn(`[Extension:{self.Id}] cleanup failed for {Entry.Label}: {tostring(Problem)}`)
+				Extension:Report(self.Id, `cleanup failed for {Entry.Label}: {tostring(Problem)}`)
 			end
 			self.Items[Index] = nil
 		end
@@ -26669,15 +31046,13 @@ do
 
 	function Extension:Debug(...)
 		if self.Config.Debug then
-			print("[Extension Debug]", ...)
+			Library:Alert("[Extension Debug] " .. JoinArguments(...))
 		end
 	end
 
 	function Extension:Report(Id: string, Problem: any)
-		warn(`[Extension:{Id}] {tostring(Problem)}`)
-
 		if self.Config.Notify and Library.Window and not Library:IsUnloaded() then
-			pcall(Library.Notify, Library, {
+			pcall(Library.InternalNotify, Library, {
 				Title = "Extension Error",
 				Content = Id,
 				SubContent = string.sub(tostring(Problem), 1, 160),
@@ -26839,7 +31214,7 @@ do
 			Method = `Add{Name}`,
 			Definition = Definition,
 			Owner = Owner,
-			Component = { __type = Name, NoIdx = Definition.NoIdx },
+			Component = { __type = Name, ClassType = Definition.ClassType or "Element", NoIdx = Definition.NoIdx },
 		}
 
 		local function Instantiate(Host: any, Idx: string?, Config: Dict?): any
@@ -26924,6 +31299,7 @@ do
 			end
 
 			Object.Type = Name
+			Object.ClassType = Definition.ClassType or "Element"
 			Object.Idx = Idx
 			Object.Owner = Owner
 
@@ -27436,7 +31812,7 @@ do
 			if Success then
 				table.insert(Loaded, if type(Result) == "table" then (Result.Name or Result.Id or File) else File)
 			else
-				warn(`[Extension] {tostring(Result)}`)
+				Extension:Report("Extension", Result)
 			end
 		end
 
@@ -27463,6 +31839,8 @@ do
 	end
 end
 
+-- This is the most important thing to return all built-in managers 
+-- !DO NOT DELETE THIS CODE I WILL KILL YOU IF YOU DELETE THIS!
 local Managers = {
 	SaveManager = SaveManager,
 	InterfaceManager = InterfaceManager,

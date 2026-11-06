@@ -20,7 +20,7 @@ Library:Configure({
 local Window = Library:CreateWindow({
 	Title = "Fluent Reimagined",
 	SubTitle = Library.Version,
-	TitleIcon = "tabler:layout-dashboard",
+	TitleIcon = "lucide:layout-dashboard",
 	SidebarTitle = "Home",
 	Size = UDim2.fromOffset(760, 540),
 	Theme = "Dark",
@@ -32,72 +32,104 @@ local Window = Library:CreateWindow({
 	MinimizeKey = Enum.KeyCode.LeftControl,
 })
 
-local ThemeModes = { "Normal", "Light", "Dark" }
-local ThemeModeIcons = {
-	Normal = "tabler:contrast",
-	Light = "rbxassetid://10734974297",
-	Dark = "rbxassetid://10734897102",
-}
-local ThemeModeIndex = 1
-local ThemeModeAction
+local ThemeModeMenu
+local ThemeModeToggle
+local ThemeModeSegmented
 
-ThemeModeAction = Window:AddBarButtonAction({
-	Icon = ThemeModeIcons.Normal,
-	Callback = function()
+Window:AddBarButtonToggle({
+	Icon = "hero:bell-slash",
+	Default = false,
+	Callback = function(Value)
+		Library:MuteInternal(Value)
+	end,
+})
+
+ThemeModeMenu = Window:Menu({
+	Title = "Context Menu",
+	Placement = "BottomRight",
+	Width = 240,
+	Dim = false,
+	DoNotBlur = true,
+	OnClose = function()
+		if ThemeModeToggle and ThemeModeToggle:GetValue() then
+			ThemeModeToggle:SetValue(false, true)
+		end
+	end,
+})
+
+ThemeModeSegmented = ThemeModeMenu:AddSection("Theme"):AddSegmented("BarThemeMode", {
+	Title = "Mode",
+	Options = { "Normal", "Light", "Dark" },
+	Default = Library:GetEffectiveThemeMode(),
+	Callback = function(Value)
 		if not Library:IsThemeModeAllowed() then
 			Library:Notify({
 				Title = "Theme Mode",
 				Content = "Unavailable for the " .. Library.Theme .. " theme",
 				Duration = 2,
 			})
+			ThemeModeSegmented:SetValue("Normal", true)
 			return
 		end
-		ThemeModeIndex = ThemeModeIndex % #ThemeModes + 1
-		local Mode = ThemeModes[ThemeModeIndex]
-		Library:SetThemeMode(Mode)
-		ThemeModeAction:SetIcon(ThemeModeIcons[Mode])
-		Library:Notify({
-			Title = "Theme Mode",
-			Content = Mode,
-			Duration = 2,
-		})
+		Library:SetThemeMode(Value)
 	end,
 })
 
-Window:AddBarButtonToggle({
-	Icon = "tabler:bell",
-	Default = true,
+Library.ThemeChanged:Connect(function()
+	ThemeModeSegmented:SetValue(Library:GetEffectiveThemeMode(), true)
+end)
+
+ThemeModeToggle = Window:AddBarButtonToggle({
+	Icon = "hero:bars-3",
+	Default = false,
 	Callback = function(Value)
-		Library:Toast(Value and "Alerts enabled" or "Alerts muted", 2)
+		if Value then
+			ThemeModeMenu:Open(ThemeModeToggle.Button.Frame, "BottomRight")
+		else
+			ThemeModeMenu:Close()
+		end
 	end,
 })
 
 local Navigator = {
-	Components = Window:AddTabInHeader({ Title = "Components", Icon = "tabler:components", SidebarTitle = "Components" }),
-	Settings = Window:AddTabInHeader({ Title = "Settings", Icon = "tabler:settings", SidebarTitle = "Settings" }),
+	Components = Window:AddTabInHeader({ Title = "Components", Icon = "lucide:component", SidebarTitle = "Components" }),
+	Settings = Window:AddTabInHeader({ Title = "Settings", Icon = "lucide:settings", SidebarTitle = "Settings" }),
 }
 
 local SubTabs = {
-	Buttons = Navigator.Components:AddTab({ Title = "Buttons", Icon = "tabler:click" }),
-	Inputs = Navigator.Components:AddTab({ Title = "Inputs", Icon = "tabler:forms" }),
-	Selection = Navigator.Components:AddTab({ Title = "Selection", Icon = "tabler:list-check" }),
-	Display = Navigator.Components:AddTab({ Title = "Display", Icon = "tabler:photo" }),
-	Overlays = Navigator.Components:AddTab({ Title = "Overlays", Icon = "tabler:app-window" }),
-	Appearance = Navigator.Settings:AddTab({ Title = "Appearance", Icon = "tabler:palette" }),
-	Config = Navigator.Settings:AddTab({ Title = "Config", Icon = "tabler:folder" }),
+	Buttons = Navigator.Components:AddTab({ Title = "Buttons", Icon = "lucide:mouse-pointer-click" }),
+	Inputs = Navigator.Components:AddTab({ Title = "Inputs", Icon = "lucide:text-cursor-input" }),
+	Selection = Navigator.Components:AddTab({ Title = "Selection", Icon = "lucide:list-checks" }),
+	Display = Navigator.Components:AddTab({ Title = "Display", Icon = "lucide:image" }),
+	Overlays = Navigator.Components:AddTab({ Title = "Overlays", Icon = "lucide:layout" }),
+	Appearance = Navigator.Settings:AddTab({ Title = "Appearance", Icon = "lucide:palette" }),
+	Config = Navigator.Settings:AddTab({ Title = "Config", Icon = "lucide:folder" }),
 }
 
 Window:AddFooterButton({
 	Title = "Unload",
-	Icon = "tabler:power",
+	Icon = "lucide:power",
 	Danger = true,
 	Header = Navigator.Settings,
 	Callback = function()
-		Library:Destroy()
+		Window:Dialog({
+			Title = "Delete Window",
+			Content = "Are you sure you want to delete this window? The interface will be unloaded.",
+			Buttons = {
+				{
+					Title = "Yes, Delete Window",
+					Variant = "Danger",
+					Callback = function()
+						Library:Destroy()
+					end,
+				},
+				{ Title = "No, Keep Window" },
+			},
+		})
 	end,
 })
 
-local BannerSection = SubTabs.Buttons:AddSection("Banner", { Icon = "tabler:layout-board" })
+local BannerSection = SubTabs.Buttons:AddSection("Banner", { Icon = "gloam:tabler:layout-board" })
 
 local Request = request or http_request or (syn and syn.request)
 
@@ -186,12 +218,12 @@ task.spawn(function()
 	})
 end)
 
-local ParagraphSection = SubTabs.Buttons:AddSection("Paragraph", { Icon = "tabler:align-left" })
+local ParagraphSection = SubTabs.Buttons:AddSection("Paragraph", { Icon = "lucide:align-left" })
 
 local DemoParagraph = ParagraphSection:AddParagraph({
 	Title = "Default",
 	Content = "Plain paragraph with tags and a badge.",
-	Icon = "tabler:info-circle",
+	Icon = "hero:information-circle",
 	Badge = { Text = "New", Color = "Accent" },
 })
 DemoParagraph:AddTag("Tag A")
@@ -203,7 +235,7 @@ ParagraphSection:AddParagraph({ Title = "Info", Content = "Info variant.", Varia
 ParagraphSection:AddParagraph({ Title = "Success", Content = "Success variant.", Variant = "Success" })
 ParagraphSection:AddParagraph({ Title = "Danger", Content = "Danger variant.", Variant = "Danger" })
 
-local ButtonSection = SubTabs.Buttons:AddSection("Button", { Icon = "tabler:click" })
+local ButtonSection = SubTabs.Buttons:AddSection("Button", { Icon = "lucide:mouse-pointer-click" })
 
 local ContextMenu = Window:Menu({
 	Title = "Context Menu",
@@ -213,7 +245,7 @@ local ContextMenu = Window:Menu({
 local ContextSection = ContextMenu:AddSection("Actions")
 ContextSection:AddButton({
 	Title = "Copy Job Id",
-	Icon = "tabler:copy",
+	Icon = "hero:clipboard-document",
 	Callback = function()
 		if setclipboard then
 			setclipboard(tostring(game.JobId))
@@ -223,7 +255,7 @@ ContextSection:AddButton({
 })
 ContextSection:AddButton({
 	Title = "Rejoin",
-	Icon = "tabler:refresh",
+	Icon = "hero:arrow-path",
 	Callback = function()
 		Library:Toast("Rejoin requested", 2)
 	end,
@@ -232,7 +264,7 @@ ContextSection:AddButton({
 ButtonSection:AddButton({
 	Title = "Row with menu",
 	Description = "Opens a context menu.",
-	Icon = "tabler:menu-2",
+	Icon = "hero:bars-3",
 	Menu = ContextMenu,
 	MenuPlacement = "BottomRight",
 	Callback = function() end,
@@ -244,7 +276,7 @@ for _, Kind in { "Primary", "Tonal", "Danger", "Ghost", "Outline", "Accent" } do
 		Description = "Variant = " .. Kind,
 		Variant = Kind,
 		ButtonText = Kind,
-		ButtonIcon = "tabler:bolt",
+		ButtonIcon = "hero:bolt",
 		ButtonSize = "Md",
 		Callback = function()
 			Library:Toast(Kind .. " pressed", 2)
@@ -262,15 +294,15 @@ for _, Size in { "Sm", "Md", "Lg" } do
 	})
 end
 
-ButtonSection:AddButton({ Title = "Icon", Variant = "Icon", ButtonIcon = "tabler:star", Callback = function() end })
-ButtonSection:AddButton({ Title = "IconTonal", Variant = "IconTonal", ButtonIcon = "tabler:heart", Callback = function() end })
-ButtonSection:AddButton({ Title = "IconDanger", Variant = "IconDanger", ButtonIcon = "tabler:trash", IconSize = "Md", Callback = function() end })
+ButtonSection:AddButton({ Title = "Icon", Variant = "Icon", ButtonIcon = "hero:star", Callback = function() end })
+ButtonSection:AddButton({ Title = "IconTonal", Variant = "IconTonal", ButtonIcon = "hero:heart", Callback = function() end })
+ButtonSection:AddButton({ Title = "IconDanger", Variant = "IconDanger", ButtonIcon = "hero:trash", IconSize = "Md", Callback = function() end })
 
 for _, Kind in { "Wide", "WideTonal", "WideDanger", "WideOutline", "WideAccent" } do
 	ButtonSection:AddButton({
 		Title = Kind,
 		Variant = Kind,
-		ButtonIcon = "tabler:rocket",
+		ButtonIcon = "hero:rocket-launch",
 		Callback = function()
 			Library:Toast(Kind .. " pressed", 2)
 		end,
@@ -284,7 +316,7 @@ local function FillButtonVariants(Host)
 			Description = "Variant = " .. Kind,
 			Variant = Kind,
 			ButtonText = Kind,
-			ButtonIcon = "tabler:bolt",
+			ButtonIcon = "hero:bolt",
 			ButtonSize = "Md",
 			Callback = function()
 				Library:Toast(Kind .. " pressed", 2)
@@ -304,15 +336,15 @@ local function FillButtonVariants(Host)
 		})
 	end
 
-	Host:AddButton({ Title = "Icon", Variant = "Icon", ButtonIcon = "tabler:star", Callback = function() end })
-	Host:AddButton({ Title = "IconTonal", Variant = "IconTonal", ButtonIcon = "tabler:heart", Callback = function() end })
-	Host:AddButton({ Title = "IconDanger", Variant = "IconDanger", ButtonIcon = "tabler:trash", IconSize = "Md", Callback = function() end })
+	Host:AddButton({ Title = "Icon", Variant = "Icon", ButtonIcon = "hero:star", Callback = function() end })
+	Host:AddButton({ Title = "IconTonal", Variant = "IconTonal", ButtonIcon = "hero:heart", Callback = function() end })
+	Host:AddButton({ Title = "IconDanger", Variant = "IconDanger", ButtonIcon = "hero:trash", IconSize = "Md", Callback = function() end })
 
 	for _, Kind in { "Wide", "WideTonal", "WideDanger", "WideOutline", "WideAccent" } do
 		Host:AddButton({
 			Title = Kind,
 			Variant = Kind,
-			ButtonIcon = "tabler:rocket",
+			ButtonIcon = "hero:rocket-launch",
 			Callback = function()
 				Library:Toast(Kind .. " pressed", 2)
 			end,
@@ -323,24 +355,24 @@ end
 local ElementPopUp
 local BuildElementPopUp
 
-local PopUpSection = SubTabs.Buttons:AddSection("PopUp", { Icon = "tabler:app-window" })
+local PopUpSection = SubTabs.Buttons:AddSection("PopUp", { Icon = "lucide:layout" })
 
 PopUpSection:AddButton({
 	Title = "Button Variants",
 	Description = "Create a PopUp containing every button variant.",
-	Icon = "tabler:click",
+	Icon = "lucide:mouse-pointer-click",
 	ButtonText = "Create",
 	Callback = function()
 		local VariantPopUp = Library:CreatePopUp({
 			Title = "Button Variants",
 			Subtitle = "All variants",
-			Icon = "tabler:click",
+			Icon = "lucide:mouse-pointer-click",
 			Size = Vector2.new(520, 420),
 			MinSize = Vector2.new(360, 240),
 			MaximizeSize = Vector2.new(780, 640),
 			ResizeAble = true,
 		})
-		local VariantSection = VariantPopUp:AddSection("Variants", { Icon = "tabler:click" })
+		local VariantSection = VariantPopUp:AddSection("Variants", { Icon = "lucide:mouse-pointer-click" })
 		FillButtonVariants(VariantSection)
 	end,
 })
@@ -348,7 +380,7 @@ PopUpSection:AddButton({
 PopUpSection:AddButton({
 	Title = "Elements",
 	Description = "Open a PopUp containing other elements.",
-	Icon = "tabler:components",
+	Icon = "lucide:component",
 	ButtonText = "Open",
 	Callback = function()
 		if ElementPopUp and not ElementPopUp.Destroyed then
@@ -359,14 +391,14 @@ PopUpSection:AddButton({
 	end,
 })
 
-local LayoutSection = SubTabs.Buttons:AddSection("Space & Group", { Icon = "tabler:layout-rows" })
+local LayoutSection = SubTabs.Buttons:AddSection("Space & Group", { Icon = "lucide:layout-list" })
 
 LayoutSection:AddSpace({ Height = 8 })
 LayoutSection:AddGap({ Height = 4 })
 
 local DemoGroup = LayoutSection:AddGroup({
 	Title = "Group",
-	Icon = "tabler:folders",
+	Icon = "lucide:folders",
 	Accordion = true,
 	Collapsed = false,
 	Spacing = 12,
@@ -377,7 +409,7 @@ DemoGroup:AddButton({ Title = "Button inside group", Callback = function() end }
 
 local LockedGroup = LayoutSection:AddGroup({
 	Title = "Locked group",
-	Icon = "tabler:lock",
+	Icon = "lucide:lock",
 	Locked = true,
 	LockedReason = "Locked for demo",
 	Collapsed = true,
@@ -385,7 +417,7 @@ local LockedGroup = LayoutSection:AddGroup({
 })
 LockedGroup:AddParagraph({ Title = "Hidden", Content = "Unlock to see." })
 
-local ToggleSection = SubTabs.Inputs:AddSection("Toggle", { Icon = "tabler:toggle-left" })
+local ToggleSection = SubTabs.Inputs:AddSection("Toggle", { Icon = "lucide:toggle-left" })
 
 local SwitchToggle = ToggleSection:AddToggle("DemoSwitch", {
 	Title = "Switch",
@@ -399,10 +431,19 @@ SwitchToggle:OnChanged(function(Value)
 	print("Switch changed:", Value)
 end)
 
+ToggleSection:AddToggle("DemoSimplefield", {
+	Title = "Simplefield",
+	Description = "Variant = Simplefield.",
+	Variant = "Simplefield",
+	Default = true,
+	Callback = function(Value)
+		print("Simplefield:", Value)
+	end,
+})
 ToggleSection:AddToggle("DemoRadio", { Title = "Radio", Variant = "Radio", Default = false })
 ToggleSection:AddToggle("DemoCheck", { Title = "Check", Variant = "Check", Default = true })
 
-local SliderSection = SubTabs.Inputs:AddSection("Slider", { Icon = "tabler:adjustments-horizontal" })
+local SliderSection = SubTabs.Inputs:AddSection("Slider", { Icon = "lucide:sliders-horizontal" })
 
 local SliderVariants = {
 	{ "Pill", 50 },
@@ -444,7 +485,7 @@ SliderSection:AddSlider("DemoSliderDecimal", {
 	Width = 180,
 })
 
-local ChoiceSection = SubTabs.Inputs:AddSection("Segmented & Dropdown", { Icon = "tabler:selector" })
+local ChoiceSection = SubTabs.Inputs:AddSection("Segmented & Dropdown", { Icon = "lucide:chevrons-up-down" })
 
 ChoiceSection:AddSegmented("DemoSegmented", {
 	Title = "Segmented",
@@ -510,7 +551,55 @@ ChoiceSection:AddDropdown("DemoDropdownTags", {
 	},
 })
 
-local TextSection = SubTabs.Inputs:AddSection("Input & Keybind", { Icon = "tabler:keyboard" })
+local SortSection = SubTabs.Inputs:AddSection("Dropdown Sort Order", { Icon = "lucide:arrow-down-az" })
+
+local SortValues = { "Mango", "Fig", "Apple", "Blueberry", "Kiwi", "Cherry", "Banana" }
+local SortModes = { "Load", "Reverse", "Alphabetical", "AlphabeticalReverse", "Length", "Selected", "Relevance" }
+
+local SortDropdown = SortSection:AddDropdown("DemoSortDropdown", {
+	Title = "Sorted dropdown",
+	Description = "SortOrder follows the mode picked below.",
+	Values = SortValues,
+	Searchable = true,
+	Multi = true,
+	AllowNull = true,
+	SortOrder = "Alphabetical",
+	Default = { "Kiwi" },
+	Width = 180,
+})
+
+SortSection:AddDropdown("DemoSortMode", {
+	Title = "Sort mode",
+	Values = SortModes,
+	Default = "Alphabetical",
+	Width = 180,
+	Callback = function(Value)
+		SortDropdown:SetSortOrder(Value)
+	end,
+})
+
+SortSection:AddDropdown("DemoSortFunction", {
+	Title = "Custom sort function",
+	Description = "SortOrder = function(A, B) returns true when A comes first.",
+	Values = SortValues,
+	SortOrder = function(A, B)
+		return #A > #B
+	end,
+	Default = 1,
+	Width = 180,
+})
+
+for _, Mode in { "Length", "Selected" } do
+	SortSection:AddDropdown("DemoSort" .. Mode, {
+		Title = "SortOrder = " .. Mode,
+		Values = SortValues,
+		SortOrder = Mode,
+		Default = 1,
+		Width = 180,
+	})
+end
+
+local TextSection = SubTabs.Inputs:AddSection("Input & Keybind", { Icon = "lucide:keyboard" })
 
 for _, Kind in { "Field", "Bordered", "Standard", "Inline", "Search", "PanelSearch" } do
 	TextSection:AddInput("DemoInput" .. Kind, {
@@ -548,7 +637,7 @@ TextSection:AddKeybind("DemoKeybind", {
 TextSection:AddKeybind("DemoKeybindHold", { Title = "Hold mode", Variant = "Keycap", Default = "E", Mode = "Hold" })
 TextSection:AddKeybind("DemoKeybindAlways", { Title = "Always mode", Variant = "Chip", Default = "Q", Mode = "Always" })
 
-local ColorSection = SubTabs.Selection:AddSection("Colorpicker & Swatches", { Icon = "tabler:color-picker" })
+local ColorSection = SubTabs.Selection:AddSection("Colorpicker & Swatches", { Icon = "lucide:pipette" })
 
 local PickerVariants = {
 	{ "Field", "Chromium" },
@@ -570,7 +659,7 @@ for _, Entry in PickerVariants do
 	})
 end
 
-local CheckSection = SubTabs.Selection:AddSection("CheckGroup", { Icon = "tabler:checkbox" })
+local CheckSection = SubTabs.Selection:AddSection("CheckGroup", { Icon = "lucide:check-square" })
 
 CheckSection:AddCheckGroup("DemoCheckGroup", {
 	Title = "CheckGroup",
@@ -580,6 +669,12 @@ CheckSection:AddCheckGroup("DemoCheckGroup", {
 		print("CheckGroup:", HttpService:JSONEncode(Value))
 	end,
 })
+CheckSection:AddCheckGroup("DemoCheckGroupSimplefield", {
+	Title = "CheckGroup (Simplefield)",
+	Variant = "Simplefield",
+	Options = { "Health", "Distance", "Weapon" },
+	Default = { Health = true },
+})
 CheckSection:AddCheckGroup("DemoCheckGroupSwitch", {
 	Title = "CheckGroup (Switch)",
 	Variant = "Switch",
@@ -587,7 +682,7 @@ CheckSection:AddCheckGroup("DemoCheckGroupSwitch", {
 	Default = { Names = true },
 })
 
-local ProgressSection = SubTabs.Selection:AddSection("Progress", { Icon = "tabler:progress" })
+local ProgressSection = SubTabs.Selection:AddSection("Progress", { Icon = "gloam:tabler:progress" })
 
 local DemoProgress = ProgressSection:AddProgress({
 	Title = "Progress (Row)",
@@ -617,7 +712,7 @@ ProgressSection:AddButton({
 	end,
 })
 
-local ViewportSection = SubTabs.Display:AddSection("Viewport", { Icon = "tabler:3d-cube-sphere" })
+local ViewportSection = SubTabs.Display:AddSection("Viewport", { Icon = "gloam:tabler:3d-cube-sphere" })
 
 local PreviewModel = Instance.new("Part")
 PreviewModel.Name = "PreviewPart"
@@ -660,7 +755,7 @@ ViewportSection:AddButton({
 	end,
 })
 
-local NotifySection = SubTabs.Overlays:AddSection("Notify & Toast", { Icon = "tabler:bell-ringing" })
+local NotifySection = SubTabs.Overlays:AddSection("Notify & Toast", { Icon = "gloam:tabler:bell-ringing" })
 
 for _, Kind in { "Info", "Success", "Warning", "Error" } do
 	NotifySection:AddButton({
@@ -680,6 +775,163 @@ for _, Kind in { "Info", "Success", "Warning", "Error" } do
 end
 
 NotifySection:AddButton({
+	Title = "Notify with buttons",
+	Description = "Buttons row with Tonal and Accent variants.",
+	Variant = "Tonal",
+	ButtonText = "Show",
+	Callback = function()
+		Library:Notify({
+			Title = "Notification",
+			Content = "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Morbi ullamcorper sagittis leo at vulputate.",
+			Icon = "gloam:tabler:book-2",
+			Color = Color3.fromRGB(99, 91, 240),
+			Duration = 10,
+			Buttons = {
+				{
+					Title = "Button",
+					Variant = "Tonal",
+					Callback = function()
+						Library:Toast("Tonal pressed", 2)
+					end,
+				},
+				{
+					Title = "Button",
+					Variant = "Accent",
+					Callback = function()
+						Library:Toast("Accent pressed", 2)
+					end,
+				},
+			},
+		})
+	end,
+})
+
+NotifySection:AddButton({
+	Title = "Notify custom button colors",
+	Description = "Each button uses its own Color.",
+	Variant = "Tonal",
+	ButtonText = "Show",
+	Callback = function()
+		Library:Notify({
+			Title = "Custom colors",
+			Content = "Buttons can use any color.",
+			SubContent = "Keep = true leaves the notification open.",
+			Icon = "gloam:tabler:mood-smile",
+			Color = Color3.fromRGB(76, 190, 99),
+			Duration = 12,
+			Buttons = {
+				{ Title = "Neutral", Keep = true },
+				{ Title = "Warn", Color = Color3.fromRGB(250, 204, 70), Keep = true },
+				{ Title = "Okay", Color = Color3.fromRGB(76, 190, 99) },
+			},
+		})
+	end,
+})
+
+NotifySection:AddButton({
+	Title = "Notify progress colors",
+	Description = "Stacked notifications with different bar colors.",
+	Variant = "Tonal",
+	ButtonText = "Show",
+	Callback = function()
+		local Palette = {
+			Color3.fromRGB(99, 91, 240),
+			Color3.fromRGB(239, 68, 68),
+			Color3.fromRGB(252, 211, 77),
+		}
+
+		for Index, Tint in Palette do
+			Library:Notify({
+				Title = "Notification",
+				Content = "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+				Icon = "gloam:tabler:book-2",
+				Color = Tint,
+				Duration = 5 + Index * 3,
+			})
+		end
+	end,
+})
+
+NotifySection:AddButton({
+	Title = "Notify with action buttons",
+	Description = "Action buttons appear left of the close button.",
+	Variant = "Tonal",
+	ButtonText = "Show",
+	Callback = function()
+		local Notice
+
+		Notice = Library:Notify({
+			Title = "Action buttons",
+			Content = "Copy, pin and mute actions next to the close button.",
+			Icon = "hero:bell",
+			Type = "Info",
+			Duration = 15,
+			Actions = {
+				{
+					Icon = "hero:clipboard-document",
+					Callback = function()
+						if setclipboard then
+							setclipboard("Action buttons")
+						end
+						Library:Toast("Copied", 2)
+					end,
+				},
+				{
+					Icon = "gloam:tabler:pin",
+					Toggle = true,
+					Default = false,
+					Callback = function(Value)
+						Library:Toast(Value and "Pinned" or "Unpinned", 2)
+					end,
+				},
+				{
+					Icon = "hero:bell-slash",
+					Color = Color3.fromRGB(239, 68, 68),
+					Close = true,
+					Callback = function()
+						Library:Toast("Muted", 2)
+					end,
+				},
+			},
+		})
+	end,
+})
+
+NotifySection:AddButton({
+	Title = "Notify full",
+	Description = "Buttons, action buttons and progress together.",
+	Variant = "Tonal",
+	ButtonText = "Show",
+	Callback = function()
+		local Notice = Library:Notify({
+			Title = "Update available",
+			Content = "A new version is ready to install.",
+			SubContent = "Version 2.0",
+			Icon = "hero:arrow-down-tray",
+			Color = Color3.fromRGB(10, 132, 255),
+			Duration = 20,
+			Actions = {
+				{
+					Icon = "hero:arrow-path",
+					Callback = function(Self)
+						Self:SetContent("Checked again just now.")
+					end,
+				},
+			},
+			Buttons = {
+				{ Title = "Later" },
+				{
+					Title = "Install",
+					Callback = function()
+						Library:Toast("Installing", 2)
+					end,
+				},
+			},
+		})
+	end,
+})
+
+NotifySection:AddButton({
 	Title = "Toast",
 	Variant = "Tonal",
 	ButtonText = "Show",
@@ -697,7 +949,7 @@ NotifySection:AddButton({
 	end,
 })
 
-local DialogSection = SubTabs.Overlays:AddSection("Dialog, Modal & Menu", { Icon = "tabler:app-window" })
+local DialogSection = SubTabs.Overlays:AddSection("Dialog, Modal & Menu", { Icon = "lucide:layout" })
 
 DialogSection:AddButton({
 	Title = "Dialog",
@@ -709,6 +961,22 @@ DialogSection:AddButton({
 			Buttons = {
 				{ Title = "Confirm", Variant = "Primary", Callback = function() print("Confirmed") end },
 				{ Title = "Cancel", Callback = function() print("Cancelled") end },
+			},
+		})
+	end,
+})
+
+DialogSection:AddButton({
+	Title = "Dialog without blur",
+	Description = "Window:Dialog with DoNotBlur = true.",
+	Callback = function()
+		Window:Dialog({
+			Title = "No Blur",
+			Content = "The background behind this dialog is not blurred.",
+			DoNotBlur = true,
+			Buttons = {
+				{ Title = "Okay", Variant = "Primary" },
+				{ Title = "Cancel" },
 			},
 		})
 	end,
@@ -823,7 +1091,7 @@ Window:SelectTab(SubTabs.Buttons)
 local TogglePopUp = Library:CreatePopUp({
 	Title = "Toggles",
 	Subtitle = "PopUp",
-	Icon = "tabler:toggle-right",
+	Icon = "lucide:toggle-right",
 	Size = Vector2.new(560, 380),
 	MinSize = Vector2.new(400, 240),
 	MaximizeSize = Vector2.new(820, 600),
@@ -832,35 +1100,35 @@ local TogglePopUp = Library:CreatePopUp({
 })
 
 TogglePopUp:AddBarButtonAction({
-	Icon = "tabler:refresh",
+	Icon = "hero:arrow-path",
 	Callback = function()
 		Library:Toast("Refreshed", 2)
 	end,
 })
 
 TogglePopUp:AddBarButtonToggle({
-	Icon = "tabler:pin",
+	Icon = "gloam:tabler:pin",
 	Default = false,
 	Callback = function(Value)
 		Library:Toast(Value and "Pinned" or "Unpinned", 2)
 	end,
 })
 
-local GeneralTab = TogglePopUp:AddTab({ Title = "General", Icon = "tabler:settings" })
-local VisualTab = TogglePopUp:AddTab({ Title = "Visual", Icon = "tabler:eye" })
-local MiscTab = TogglePopUp:AddTab({ Title = "Misc", Icon = "tabler:dots" })
+local GeneralTab = TogglePopUp:AddTab({ Title = "General", Icon = "lucide:settings" })
+local VisualTab = TogglePopUp:AddTab({ Title = "Visual", Icon = "hero:eye" })
+local MiscTab = TogglePopUp:AddTab({ Title = "Misc", Icon = "hero:ellipsis-horizontal" })
 
-local GeneralSection = GeneralTab:AddSection("General", { Icon = "tabler:settings" })
+local GeneralSection = GeneralTab:AddSection("General", { Icon = "lucide:settings" })
 GeneralSection:AddToggle("PopUpAutoSave", { Title = "Auto Save", Default = true })
 GeneralSection:AddToggle("PopUpNotifications", { Title = "Notifications", Default = false })
 GeneralSection:AddToggle("PopUpSounds", { Title = "Sounds", Variant = "Check", Default = true })
 
-local VisualSection = VisualTab:AddSection("Visual", { Icon = "tabler:eye" })
+local VisualSection = VisualTab:AddSection("Visual", { Icon = "hero:eye" })
 VisualSection:AddToggle("PopUpAnimations", { Title = "Animations", Default = true })
 VisualSection:AddToggle("PopUpCompact", { Title = "Compact Mode", Variant = "Radio", Default = false })
 VisualSection:AddToggle("PopUpBorders", { Title = "Borders", Variant = "Check", Default = true })
 
-local MiscSection = MiscTab:AddSection("Misc", { Icon = "tabler:dots" })
+local MiscSection = MiscTab:AddSection("Misc", { Icon = "hero:ellipsis-horizontal" })
 MiscSection:AddToggle("PopUpDebug", { Title = "Debug", Default = false })
 MiscSection:AddToggle("PopUpTelemetry", { Title = "Telemetry", Variant = "Radio", Default = false })
 
@@ -868,7 +1136,7 @@ BuildElementPopUp = function()
 	ElementPopUp = Library:CreatePopUp({
 		Title = "Elements",
 		Subtitle = "PopUp Test",
-		Icon = "tabler:components",
+		Icon = "lucide:component",
 		Size = Vector2.new(580, 420),
 		MinSize = Vector2.new(420, 260),
 		MaximizeSize = Vector2.new(860, 640),
@@ -876,11 +1144,11 @@ BuildElementPopUp = function()
 		SidebarTitle = "Elements",
 	})
 
-	local InputTab = ElementPopUp:AddTab({ Title = "Inputs", Icon = "tabler:forms" })
-	local ChoiceTab = ElementPopUp:AddTab({ Title = "Choices", Icon = "tabler:list-check" })
-	local InfoTab = ElementPopUp:AddTab({ Title = "Info", Icon = "tabler:info-circle" })
+	local InputTab = ElementPopUp:AddTab({ Title = "Inputs", Icon = "lucide:text-cursor-input" })
+	local ChoiceTab = ElementPopUp:AddTab({ Title = "Choices", Icon = "lucide:list-checks" })
+	local InfoTab = ElementPopUp:AddTab({ Title = "Info", Icon = "hero:information-circle" })
 
-	local ValueSection = InputTab:AddSection("Values", { Icon = "tabler:adjustments" })
+	local ValueSection = InputTab:AddSection("Values", { Icon = "hero:adjustments-horizontal" })
 	ValueSection:AddSlider("PopUpSliderPercent", {
 		Title = "Slider",
 		Description = "Default variant",
@@ -909,7 +1177,7 @@ BuildElementPopUp = function()
 		Rounding = 2,
 	})
 
-	local TextSection = InputTab:AddSection("Text & Keys", { Icon = "tabler:keyboard" })
+	local TextSection = InputTab:AddSection("Text & Keys", { Icon = "lucide:keyboard" })
 	TextSection:AddInput("PopUpInput", {
 		Title = "Input",
 		Default = "",
@@ -937,7 +1205,7 @@ BuildElementPopUp = function()
 	})
 	TextSection:AddKeybind("PopUpKeybindHold", { Title = "Hold mode", Variant = "Keycap", Default = "E", Mode = "Hold" })
 
-	local DropdownSection = ChoiceTab:AddSection("Dropdown", { Icon = "tabler:selector" })
+	local DropdownSection = ChoiceTab:AddSection("Dropdown", { Icon = "lucide:chevrons-up-down" })
 	DropdownSection:AddDropdown("PopUpDropdown", {
 		Title = "Dropdown",
 		Values = { "Alpha", "Beta", "Gamma", "Delta" },
@@ -965,7 +1233,7 @@ BuildElementPopUp = function()
 		end,
 	})
 
-	local ColorSection = ChoiceTab:AddSection("Colorpicker", { Icon = "tabler:color-picker" })
+	local ColorSection = ChoiceTab:AddSection("Colorpicker", { Icon = "lucide:pipette" })
 	ColorSection:AddColorpicker("PopUpColorField", {
 		Title = "Field",
 		Variant = "Field",
@@ -984,14 +1252,14 @@ BuildElementPopUp = function()
 		Transparency = 0,
 	})
 
-	local InfoSection = InfoTab:AddSection("Info", { Icon = "tabler:info-circle" })
+	local InfoSection = InfoTab:AddSection("Info", { Icon = "hero:information-circle" })
 	InfoSection:AddParagraph({ Title = "Note", Content = "Note variant inside a PopUp.", Variant = "Note" })
 	InfoSection:AddParagraph({ Title = "Warning", Content = "Warning variant inside a PopUp.", Variant = "Warning" })
 	InfoSection:AddParagraph({ Title = "Success", Content = "Success variant inside a PopUp.", Variant = "Success" })
 	InfoSection:AddButton({
 		Title = "Toast",
 		Description = "Button inside the Elements PopUp.",
-		Icon = "tabler:bell",
+		Icon = "hero:bell",
 		ButtonText = "Show",
 		Callback = function()
 			Library:Toast("Hello from PopUp", 2)
