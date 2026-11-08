@@ -1349,6 +1349,8 @@ local Library = {
 		CallbackErrors = true,
 		Intro = true,
 		IntroTimeout = 20,
+		IntroQuietTime = 0.6,
+		IntroStableFrames = 24,
 		Marquee = true,
 	},
 
@@ -1531,7 +1533,7 @@ export type OscillateOptions = {
 
 local Flipper
 do
-	local MaxDeltaTime = 1 / 20
+	local MaxDeltaTime = 1 / 12
 	local VelocityThreshold = 0.001
 	local PositionThreshold = 0.001
 	local Epsilon = 0.0001
@@ -1577,6 +1579,10 @@ do
 		}, Instant) :: any
 	end
 
+	function Instant:Retarget(TargetValue: number)
+		self.TargetValue = TargetValue
+	end
+
 	function Instant:Step(State: MotorState): MotorState
 		State.Value = self.TargetValue
 		State.Velocity = 0
@@ -1595,6 +1601,12 @@ do
 			Frequency = Options and Options.Frequency or 4,
 			DampingRatio = Options and Options.DampingRatio or 1,
 		}, Spring) :: any
+	end
+
+	function Spring:Retarget(TargetValue: number, Options: SpringOptions?)
+		self.TargetValue = TargetValue
+		self.Frequency = Options and Options.Frequency or 4
+		self.DampingRatio = Options and Options.DampingRatio or 1
 	end
 
 	function Spring:Step(State: MotorState, DeltaTime: number): MotorState
@@ -1964,7 +1976,9 @@ do
 		self.State.Complete = false
 		self.Goal = Goal
 
-		self.StartSignal:Fire()
+		if self.StartSignal.Head then
+			self.StartSignal:Fire()
+		end
 
 		if self.UseImplicitConnections then
 			self:Start()
@@ -1986,13 +2000,43 @@ do
 		return self
 	end
 
+	local function Rearm(Motor)
+		Motor.State.Complete = false
+
+		if Motor.StartSignal.Head then
+			Motor.StartSignal:Fire()
+		end
+
+		if Motor.UseImplicitConnections then
+			Motor:Start()
+		end
+	end
+
 	function SingleMotor:Spring(Target: number, Options: SpringOptions?)
-		self:SetGoal(Spring.new(Target, Options))
+		local Current = self.Goal
+		if Current and Current.Owner == self and getmetatable(Current) == Spring then
+			Current:Retarget(Target, Options)
+			Rearm(self)
+			return self
+		end
+
+		local Goal = Spring.new(Target, Options)
+		Goal.Owner = self
+		self:SetGoal(Goal)
 		return self
 	end
 
 	function SingleMotor:Snap(Target: number)
-		self:SetGoal(Instant.new(Target))
+		local Current = self.Goal
+		if Current and Current.Owner == self and getmetatable(Current) == Instant then
+			Current:Retarget(Target)
+			Rearm(self)
+			return self
+		end
+
+		local Goal = Instant.new(Target)
+		Goal.Owner = self
+		self:SetGoal(Goal)
 		return self
 	end
 
@@ -2058,7 +2102,7 @@ do
 		end
 
 		if self.StepSignal.Head then
-			self.StepSignal:Fire(self:GetValue())
+			self.StepSignal:Fire(self:Snapshot())
 		end
 
 		if AllMotorsComplete then
@@ -2087,6 +2131,20 @@ do
 		if self.UseImplicitConnections then
 			self:Start()
 		end
+	end
+
+	function GroupMotor:Snapshot(): { [any]: any }
+		local Cache = self.Cache
+		if not Cache then
+			Cache = {}
+			self.Cache = Cache
+		end
+
+		for Key, Motor in self.Motors do
+			Cache[Key] = Motor:GetValue()
+		end
+
+		return Cache
 	end
 
 	function GroupMotor:GetValue(): { [any]: any }
@@ -5768,10 +5826,12 @@ function Creator.UpdateTheme(OnDone: (() -> ())?)
 	end
 
 	if ProcessBatch() then
+		Creator.ThemeBusy = false
 		Finish()
 		return
 	end
 
+	Creator.ThemeBusy = true
 	task.spawn(function()
 		repeat
 			Heartbeat:Wait()
@@ -5779,6 +5839,7 @@ function Creator.UpdateTheme(OnDone: (() -> ())?)
 				return
 			end
 		until ProcessBatch()
+		Creator.ThemeBusy = false
 		Finish()
 	end)
 end
@@ -5961,9 +6022,9 @@ function Creator.SpringMotor(
 			return
 		end
 		if Library.Config.ReducedMotion then
-			motor:SetGoal(Flipper.Instant.new(value))
+			motor:Snap(value)
 		else
-			motor:SetGoal(Flipper.Spring.new(value, SpringOptions))
+			motor:Spring(value, SpringOptions)
 		end
 	end
 
@@ -6005,12 +6066,31 @@ function Creator.Reset()
 	table.clear(Creator.TransparencyMotors)
 end
 
+local TweenInfos = {}
+
 function Creator.Tween(Object, Time, Goal, Style, Direction)
-	local Tween = TweenService:Create(
-		Object,
-		TweenInfo.new(Time, Style or Enum.EasingStyle.Quart, Direction or Enum.EasingDirection.Out),
-		Goal
-	)
+	Style = Style or Enum.EasingStyle.Quart
+	Direction = Direction or Enum.EasingDirection.Out
+
+	local ByTime = TweenInfos[Time]
+	if not ByTime then
+		ByTime = {}
+		TweenInfos[Time] = ByTime
+	end
+
+	local ByStyle = ByTime[Style]
+	if not ByStyle then
+		ByStyle = {}
+		ByTime[Style] = ByStyle
+	end
+
+	local Info = ByStyle[Direction]
+	if not Info then
+		Info = TweenInfo.new(Time, Style, Direction)
+		ByStyle[Direction] = Info
+	end
+
+	local Tween = TweenService:Create(Object, Info, Goal)
 	Tween:Play()
 	return Tween
 end
@@ -6091,6 +6171,11 @@ local function MarqueeOffset(Entry: any): number
 end
 
 local function MarqueeStep(DeltaTime: number)
+	local Window = Library.Window
+	if Library.IntroActive or (Window and not Window.Root.Visible) then
+		return
+	end
+
 	local HasActive = false
 	for Label, Entry in MarqueeActive do
 		HasActive = true
@@ -8511,6 +8596,10 @@ do
 
 		local key = BuildRequest(pack, variant, size)
 		return key ~= nil and Sources[key] ~= nil
+	end
+
+	function IconService.IsBusy(): boolean
+		return next(Pending) ~= nil
 	end
 
 	function IconService.Search(
@@ -25553,6 +25642,8 @@ export type IntroOptions = {
 	Size: UDim2?,
 }
 
+local ContentProvider = GetService("ContentProvider")
+
 local IntroModule = {
 	Active = false,
 	Shown = false,
@@ -25560,29 +25651,63 @@ local IntroModule = {
 	Window = nil,
 	Gui = nil,
 	Connection = nil,
+	Options = nil,
+	Activity = 0,
+	Watchers = {},
 	Holds = {},
 	Queue = {},
 }
 
 local IntroSettings = {
-	EnterTime = 0.35,
+	BackdropTransparency = 0.5,
+	CardSize = Vector2.new(300, 176),
+	CardRadius = 20,
+	StartScale = 0.9,
+	EnterTotal = 0.7,
+	LoadTime = 0.45,
+	LoadFrames = 8,
+	LoadTimeout = 4,
 	FillTime = 0.22,
-	HoldTime = 0.08,
-	ExitTime = 0.35,
-	StableFrames = 3,
-	StableDelta = 0.05,
-	MaxStep = 1 / 30,
+	HoldTime = 0.1,
+	MorphTime = 0.5,
+	RevealTime = 0.3,
+	RevealFrames = 4,
+	RevealTimeout = 0.6,
+	MaxStep = 1 / 12,
 	Ceiling = 0.92,
-	StartScale = 0.94,
-	ShownTimeout = 3,
+	SpikeFloor = 0.04,
+	SpikeFactor = 2.2,
+	BaselineRate = 0.05,
+	QueueGrace = 8,
 }
 
 local function EaseOut(Alpha: number): number
 	return 1 - (1 - Alpha) ^ 3
 end
 
+local function EaseInOut(Alpha: number): number
+	if Alpha < 0.5 then
+		return 4 * Alpha * Alpha * Alpha
+	end
+	return 1 - (-2 * Alpha + 2) ^ 3 / 2
+end
+
+local function EaseOutBack(Alpha: number): number
+	local Overshoot = 1.70158
+	local Shifted = Alpha - 1
+	return 1 + (Overshoot + 1) * Shifted ^ 3 + Overshoot * Shifted ^ 2
+end
+
 local function Advance(Time: number, Duration: number): number
 	return if Duration <= 0 then 1 else math.min(Time / Duration, 1)
+end
+
+local function Stage(Clock: number, Delay: number, Duration: number, Factor: number): number
+	return Advance(math.max(Clock - Delay * Factor, 0), Duration * Factor)
+end
+
+local function Mix(From: number, To: number, Alpha: number): number
+	return From + (To - From) * Alpha
 end
 
 function IntroModule.Cleanup()
@@ -25591,6 +25716,11 @@ function IntroModule.Cleanup()
 		Connection:Disconnect()
 		IntroModule.Connection = nil
 	end
+
+	for _, Watcher in IntroModule.Watchers do
+		Watcher:Disconnect()
+	end
+	table.clear(IntroModule.Watchers)
 
 	local Gui = IntroModule.Gui
 	if Gui then
@@ -25602,6 +25732,7 @@ function IntroModule.Cleanup()
 	IntroModule.Shown = false
 	IntroModule.Built = false
 	IntroModule.Window = nil
+	IntroModule.Options = nil
 	Library.IntroActive = false
 	table.clear(IntroModule.Holds)
 end
@@ -25622,36 +25753,91 @@ function IntroModule.Flush()
 	end
 end
 
-function IntroModule.WaitShown()
-	if not coroutine.isyieldable() then
-		return
-	end
-
-	local Deadline = os.clock() + IntroSettings.ShownTimeout
-	while IntroModule.Active and not IntroModule.Shown and os.clock() < Deadline do
-		Heartbeat:Wait()
-	end
+function IntroModule.Touch()
+	IntroModule.Activity = os.clock()
 end
 
-function IntroModule.Start(Options: IntroOptions)
+function IntroModule.IsBusy(Waited: number): boolean
+	if next(IntroModule.Holds) ~= nil or Creator.ThemeBusy or IconService.IsBusy() then
+		return true
+	end
+
+	if not game:IsLoaded() then
+		return true
+	end
+
+	if Waited < IntroSettings.QueueGrace then
+		local Success, Size = pcall(function()
+			return ContentProvider.RequestQueueSize
+		end)
+		return Success and Size > 0
+	end
+
+	return false
+end
+
+function IntroModule.Begin(Options: IntroOptions)
 	if IntroModule.Active then
 		return
 	end
+
+	IntroModule.Options = Options
+	IntroModule.Active = true
+	IntroModule.Shown = false
+	IntroModule.Built = false
+	IntroModule.Activity = os.clock()
+	Library.IntroActive = true
+
+	for _, Name in { "TabAdded", "SectionAdded", "ElementAdded", "ActionAdded" } do
+		table.insert(IntroModule.Watchers, Library.Events[Name]:Connect(IntroModule.Touch))
+	end
+
+	local Waited = 0
+	local Stable = 0
+	local Baseline = 1 / 60
+
+	IntroModule.Connection = Heartbeat:Connect(function(Delta: number)
+		if Library.Unloaded then
+			IntroModule.Cleanup()
+			return
+		end
+
+		Waited += Delta
+
+		local Spike = Delta > math.max(Baseline * IntroSettings.SpikeFactor, IntroSettings.SpikeFloor)
+		if Spike then
+			Stable = 0
+			IntroModule.Touch()
+		else
+			Stable += 1
+			Baseline += (Delta - Baseline) * IntroSettings.BaselineRate
+		end
+
+		local Config = Library.Config
+		local Quiet = os.clock() - IntroModule.Activity >= Config.IntroQuietTime
+		local Ready = IntroModule.Built
+			and Quiet
+			and Stable >= Config.IntroStableFrames
+			and not IntroModule.IsBusy(Waited)
+
+		if Ready or Waited >= Config.IntroTimeout then
+			IntroModule.Connection:Disconnect()
+			IntroModule.Connection = nil
+			IntroModule.Play()
+		end
+	end)
+end
+
+function IntroModule.Play()
+	local Options = IntroModule.Options :: IntroOptions
+	local Window = IntroModule.Window
+	local Card = IntroSettings.CardSize
+	local WindowRadius = if Window then Window.CornerRadius else 13
 
 	local Tint = Options.Tint
 	if Tint == nil then
 		Tint = type(Options.Source) == "string" and Library:GetIconData(Options.Source, nil, nil, "TitleBar") ~= nil
 	end
-
-	local View = GUI.AbsoluteSize
-	if View.X <= 0 or View.Y <= 0 then
-		local CurrentCamera = Workspace.CurrentCamera
-		View = if CurrentCamera then CurrentCamera.ViewportSize else Vector2.new(1920, 1080)
-	end
-
-	local Requested = Options.Size or UDim2.fromOffset(760, 540)
-	local Width = math.min(Requested.X.Offset, View.X)
-	local Height = math.min(Requested.Y.Offset, View.Y)
 
 	local Gui = New("ScreenGui", {
 		DisplayOrder = 1000,
@@ -25660,6 +25846,17 @@ function IntroModule.Start(Options: IntroOptions)
 		Parent = GUI.Parent,
 	})
 	ProtectGui(Gui)
+	IntroModule.Gui = Gui
+
+	local Backdrop = New("Frame", {
+		Size = UDim2.fromScale(1, 1),
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		Parent = Gui,
+		ThemeTag = {
+			BackgroundColor3 = "Overlay",
+		},
+	})
 
 	local Fill = New("Frame", {
 		Size = UDim2.fromScale(0, 1),
@@ -25671,11 +25868,11 @@ function IntroModule.Start(Options: IntroOptions)
 		Corner(2),
 	})
 
-	local Track = New("Frame", {
+	local Track = New("CanvasGroup", {
 		Size = UDim2.fromOffset(168, 3),
 		BackgroundTransparency = 0.86,
 		BorderSizePixel = 0,
-		ClipsDescendants = true,
+		GroupTransparency = 1,
 		LayoutOrder = 3,
 		ThemeTag = {
 			BackgroundColor3 = "SliderRail",
@@ -25683,6 +25880,19 @@ function IntroModule.Start(Options: IntroOptions)
 	}, {
 		Corner(2),
 		Fill,
+	})
+
+	local Title = Label({
+		Text = Options.Title,
+		RichText = true,
+		TextSize = 22,
+		Weight = "SemiBold",
+		Size = UDim2.new(1, -48, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		TextWrapped = true,
+		TextXAlignment = Enum.TextXAlignment.Center,
+		TextTransparency = 1,
+		LayoutOrder = 2,
 	})
 
 	local Children = {
@@ -25693,27 +25903,26 @@ function IntroModule.Start(Options: IntroOptions)
 			SortOrder = Enum.SortOrder.LayoutOrder,
 			Padding = UDim.new(0, 14),
 		}),
-		Label({
-			Text = Options.Title,
-			RichText = true,
-			TextSize = 22,
-			Weight = "SemiBold",
-			Size = UDim2.new(1, -48, 0, 0),
-			AutomaticSize = Enum.AutomaticSize.Y,
-			TextWrapped = true,
-			TextXAlignment = Enum.TextXAlignment.Center,
-			LayoutOrder = 2,
-		}),
+		Title,
 		Track,
 	}
 
+	local Logo = nil
+	local LogoScale = nil
+
 	if Options.Icon then
-		local Logo = New("ImageLabel", {
+		LogoScale = New("UIScale", {
+			Scale = 0,
+		})
+
+		Logo = New("ImageLabel", {
 			Size = UDim2.fromOffset(56, 56),
 			BackgroundTransparency = 1,
+			ImageTransparency = 1,
 			LayoutOrder = 1,
 		}, {
 			Corner(Options.Corner or 0),
+			LogoScale,
 		})
 		Creator.SetImage(Logo, Options.Icon)
 
@@ -25727,12 +25936,13 @@ function IntroModule.Start(Options: IntroOptions)
 	end
 
 	local Content = New("CanvasGroup", {
-		Size = UDim2.fromScale(1, 1),
+		Size = UDim2.fromOffset(Card.X, Card.Y),
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
 		BackgroundTransparency = 1,
-		GroupTransparency = 1,
 	}, Children)
 
-	local Stroke = New("UIStroke", {
+	local Outline = New("UIStroke", {
 		ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
 		Transparency = 1,
 		ThemeTag = {
@@ -25740,14 +25950,16 @@ function IntroModule.Start(Options: IntroOptions)
 		},
 	})
 
-	local Scale = New("UIScale", {
+	local PanelScale = New("UIScale", {
 		Scale = IntroSettings.StartScale,
 	})
+
+	local PanelCorner = Corner(IntroSettings.CardRadius)
 
 	local Panel = New("Frame", {
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		Position = UDim2.fromScale(0.5, 0.5),
-		Size = UDim2.fromOffset(Width, Height),
+		Size = UDim2.fromOffset(Card.X, Card.Y),
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
 		Parent = Gui,
@@ -25755,24 +25967,32 @@ function IntroModule.Start(Options: IntroOptions)
 			BackgroundColor3 = "AcrylicMain",
 		},
 	}, {
-		Corner(13),
-		Stroke,
-		Scale,
+		PanelCorner,
+		Outline,
+		PanelScale,
 		Content,
 	})
 
-	IntroModule.Gui = Gui
-	IntroModule.Active = true
-	IntroModule.Shown = false
-	IntroModule.Built = false
-	Library.IntroActive = true
+	local function GetTarget(): (Vector2, Vector2)
+		local Root = if Window then Window.Root else nil
+		if Root and Root.Parent then
+			local Size = Root.AbsoluteSize
+			return Size, Root.AbsolutePosition - Gui.AbsolutePosition + Size / 2
+		end
+		return Card, Gui.AbsoluteSize / 2
+	end
 
 	local Phase = "Enter"
 	local Clock = 0
-	local Waited = 0
+	local Breath = 0
 	local Stable = 0
 	local Progress = 0
 	local FillStart = 0
+	local Baseline = 1 / 60
+	local FromSize = Card
+	local FromCenter = Vector2.zero
+	local ToSize = Card
+	local ToCenter = Vector2.zero
 
 	IntroModule.Connection = Heartbeat:Connect(function(Delta: number)
 		if Library.Unloaded then
@@ -25783,34 +26003,52 @@ function IntroModule.Start(Options: IntroOptions)
 		local Config = Library.Config
 		local Factor = if Config.ReducedMotion then 0 else 1 / Config.AnimationSpeed
 		local Step = math.min(Delta, IntroSettings.MaxStep)
-		local Border = 0
-		Waited += Delta
+		Breath += Step
+
+		if Delta > math.max(Baseline * IntroSettings.SpikeFactor, IntroSettings.SpikeFloor) then
+			Stable = 0
+		else
+			Stable += 1
+			Baseline += (Delta - Baseline) * IntroSettings.BaselineRate
+		end
+
+		if LogoScale and Phase ~= "Enter" and Phase ~= "Dissolve" then
+			LogoScale.Scale = 1 + 0.025 * math.sin(Breath * 2.4)
+		end
 
 		if Phase == "Enter" then
 			Clock += Step
-			local Alpha = EaseOut(Advance(Clock, IntroSettings.EnterTime * Factor))
-			Panel.BackgroundTransparency = 1 - Alpha
-			Stroke.Transparency = 1 - Alpha * (1 - Border)
-			Content.GroupTransparency = 1 - Alpha
-			Scale.Scale = IntroSettings.StartScale + (1 - IntroSettings.StartScale) * Alpha
 
-			if Alpha >= 1 then
+			local BackdropAlpha = EaseOut(Stage(Clock, 0, 0.35, Factor))
+			local PanelRaw = Stage(Clock, 0.08, 0.5, Factor)
+			local PanelAlpha = EaseOut(PanelRaw)
+			local LogoRaw = Stage(Clock, 0.2, 0.5, Factor)
+
+			Backdrop.BackgroundTransparency = Mix(1, IntroSettings.BackdropTransparency, BackdropAlpha)
+			Panel.BackgroundTransparency = 1 - PanelAlpha
+			Outline.Transparency = 1 - PanelAlpha
+			PanelScale.Scale = Mix(IntroSettings.StartScale, 1, EaseOutBack(PanelRaw))
+			Title.TextTransparency = 1 - EaseOut(Stage(Clock, 0.3, 0.35, Factor))
+			Track.GroupTransparency = 1 - EaseOut(Stage(Clock, 0.38, 0.3, Factor))
+
+			if Logo and LogoScale then
+				LogoScale.Scale = EaseOutBack(LogoRaw)
+				Logo.ImageTransparency = 1 - EaseOut(LogoRaw)
+			end
+
+			if Clock >= IntroSettings.EnterTotal * Factor then
 				Phase = "Load"
 				Clock = 0
-				Waited = 0
+				Stable = 0
 				IntroModule.Shown = true
 			end
 		elseif Phase == "Load" then
 			Clock += Step
-			Stable = if Delta <= IntroSettings.StableDelta then Stable + 1 else 0
-			Progress += (IntroSettings.Ceiling - Progress) * math.min(Step * 2.2, 1)
+			Progress += (IntroSettings.Ceiling - Progress) * math.min(Step * 3, 1)
 			Fill.Size = UDim2.fromScale(Progress, 1)
 
-			local Ready = IntroModule.Built
-				and next(IntroModule.Holds) == nil
-				and Stable >= IntroSettings.StableFrames
-
-			if Ready or Waited >= Config.IntroTimeout then
+			local Settled = Stable >= IntroSettings.LoadFrames and next(IntroModule.Holds) == nil
+			if (Settled and Clock >= IntroSettings.LoadTime * Factor) or Clock >= IntroSettings.LoadTimeout then
 				Phase = "Fill"
 				Clock = 0
 				FillStart = Progress
@@ -25818,8 +26056,7 @@ function IntroModule.Start(Options: IntroOptions)
 		elseif Phase == "Fill" then
 			Clock += Step
 			local Alpha = EaseOut(Advance(Clock, IntroSettings.FillTime * Factor))
-			Progress = FillStart + (1 - FillStart) * Alpha
-			Fill.Size = UDim2.fromScale(Progress, 1)
+			Fill.Size = UDim2.fromScale(Mix(FillStart, 1, Alpha), 1)
 
 			if Alpha >= 1 then
 				Phase = "Hold"
@@ -25829,17 +26066,47 @@ function IntroModule.Start(Options: IntroOptions)
 			Clock += Step
 
 			if Clock >= IntroSettings.HoldTime * Factor then
-				Phase = "Exit"
+				Phase = "Morph"
 				Clock = 0
+				FromSize = Card
+				FromCenter = Gui.AbsoluteSize / 2
+				ToSize, ToCenter = GetTarget()
+				PanelScale.Scale = 1
+			end
+		elseif Phase == "Morph" then
+			Clock += Step
+
+			local Alpha = Advance(Clock, IntroSettings.MorphTime * Factor)
+			local Eased = EaseInOut(Alpha)
+			local Size = FromSize:Lerp(ToSize, Eased)
+			local Center = FromCenter:Lerp(ToCenter, Eased)
+
+			Panel.Size = UDim2.fromOffset(math.round(Size.X), math.round(Size.Y))
+			Panel.Position = UDim2.fromOffset(math.round(Center.X), math.round(Center.Y))
+			PanelCorner.CornerRadius = UDim.new(0, Mix(IntroSettings.CardRadius, WindowRadius, Eased))
+			Content.GroupTransparency = EaseOut(Advance(Clock, 0.2 * Factor))
+			Backdrop.BackgroundTransparency = Mix(IntroSettings.BackdropTransparency, 1, EaseOut(Alpha))
+
+			if Alpha >= 1 then
+				Phase = "Reveal"
+				Clock = 0
+				Stable = 0
 				IntroModule.Reveal()
+			end
+		elseif Phase == "Reveal" then
+			Clock += Step
+
+			if (Stable >= IntroSettings.RevealFrames and Clock >= 0.05) or Clock >= IntroSettings.RevealTimeout then
+				Phase = "Dissolve"
+				Clock = 0
 			end
 		else
 			Clock += Step
-			local Alpha = EaseOut(Advance(Clock, IntroSettings.ExitTime * Factor))
+
+			local Alpha = EaseOut(Advance(Clock, IntroSettings.RevealTime * Factor))
 			Panel.BackgroundTransparency = Alpha
-			Stroke.Transparency = Border + (1 - Border) * Alpha
-			Content.GroupTransparency = Alpha
-			Scale.Scale = 1 + (1 - IntroSettings.StartScale) * Alpha
+			Outline.Transparency = Alpha
+			PanelScale.Scale = Mix(1, 1.015, Alpha)
 
 			if Alpha >= 1 then
 				IntroModule.Cleanup()
@@ -25857,9 +26124,11 @@ function Library:HoldIntro(Reason: string?): () -> ()
 
 	local Token = {}
 	IntroModule.Holds[Token] = Reason or "Hold"
+	IntroModule.Touch()
 
 	return function()
 		IntroModule.Holds[Token] = nil
+		IntroModule.Touch()
 	end
 end
 
@@ -25895,7 +26164,7 @@ function Library:CreateWindow(Config)
 
 	local LogoSource = Config.Logo or Config.TitleIcon
 	if Library.Config.Intro and not Library.Unloaded then
-		IntroModule.Start({
+		IntroModule.Begin({
 			Title = Config.Title,
 			Source = LogoSource,
 			Icon = Resolve(LogoSource, "TitleBar"),
@@ -25903,7 +26172,6 @@ function Library:CreateWindow(Config)
 			Corner = Config.LogoCorner,
 			Size = Config.Size,
 		})
-		IntroModule.WaitShown()
 	end
 
 	Library.WindowDefaults = {
