@@ -1,7 +1,7 @@
 --!optimize 2
 --!native
 -- This Thing is Readable Version. The version you are using is the Minify version of the code with dark lua to change the file size to the smallest possible size without damaging the code
--- Code write By StyearX And Other niggas friends 🫩
+-- Code write By StyearX And Other dude 🫩
 local fuck = cloneref or clonereference or function(Object: any): any
 	return Object
 end
@@ -31,7 +31,7 @@ local PreRender = RunService.PreRender
 local Heartbeat = RunService.Heartbeat
 local ProtectGui = protectgui or (syn and syn.protect_gui) or function() end
 
--- Theme important variables 
+-- Theme important variables
 -- Never Delete This Shit this is important code, you are stupid human if you delete this
 local Themes = {
 	Names = {
@@ -3517,6 +3517,32 @@ local UiBlur = (function()
 
 	local GradientSteps = 64
 	local PictureCoverage = 0.6
+	local MaxViewports = 4
+
+	local function ViewportHash(Frame: ViewportFrame): number
+		local Acc, Seen = 0, 0
+		for _, Descendant in Frame:GetDescendants() do
+			if Descendant:IsA("BasePart") then
+				Seen += 1
+				if Seen > 400 then
+					break
+				end
+				local Position, Size, Color = Descendant.Position, Descendant.Size, Descendant.Color
+				local Sample = Position.X
+					+ Position.Y * 3
+					+ Position.Z * 5
+					+ Size.X * 7
+					+ Size.Y * 11
+					+ Size.Z * 13
+					+ Color.R * 17
+					+ Color.G * 19
+					+ Color.B * 23
+					+ Descendant.Transparency * 29
+				Acc = (Acc * 31 + math.floor(Sample * 100)) % 2147483629
+			end
+		end
+		return Acc + Seen
+	end
 
 	function UiBlur.Rasterize(Area: GuiObject, Config: { [string]: any }?): any
 		local Settings = Config or {}
@@ -3609,12 +3635,18 @@ local UiBlur = (function()
 				Clip: { number },
 				Base: Color3,
 				Strength: number,
-				Gradient: UIGradient
+				Gradient: UIGradient,
+				BoxLeft: number?,
+				BoxTop: number?,
+				BoxRight: number?,
+				BoxBottom: number?
 			)
 				local PxLeft, PxTop, PxRight, PxBottom = PixelBounds(Left, Top, Right, Bottom, Clip)
 				if PxRight <= PxLeft or PxBottom <= PxTop then
 					return
 				end
+				local SpanLeft, SpanTop = BoxLeft or Left, BoxTop or Top
+				local SpanRight, SpanBottom = BoxRight or Right, BoxBottom or Bottom
 
 				if not Underlay and #Recorded < 96 then
 					table.insert(Recorded, {
@@ -3631,11 +3663,11 @@ local UiBlur = (function()
 
 				local Angle = math.rad(Gradient.Rotation)
 				local Cos, Sin = math.cos(Angle), math.sin(Angle)
-				local BoxWidth, BoxHeight = Right - Left, Bottom - Top
+				local BoxWidth, BoxHeight = SpanRight - SpanLeft, SpanBottom - SpanTop
 				local Extent = math.max(BoxWidth * math.abs(Cos) + BoxHeight * math.abs(Sin), 1)
 				local Offset = Gradient.Offset
 				local Shift = Offset.X * BoxWidth * Cos + Offset.Y * BoxHeight * Sin
-				local CenterX, CenterY = Left + BoxWidth * 0.5, Top + BoxHeight * 0.5
+				local CenterX, CenterY = SpanLeft + BoxWidth * 0.5, SpanTop + BoxHeight * 0.5
 
 				local LutR, LutG, LutB, LutA = {}, {}, {}, {}
 				local Any = false
@@ -3765,6 +3797,7 @@ local UiBlur = (function()
 
 			local Painted: { [Instance]: { [any]: boolean } } = {}
 			local Pictures: { any } = {}
+			local Viewports: { any } = {}
 
 			local function Visit(Object: Instance, Clip: { number }, Opacity: number)
 				if Count >= MaxShapes or Exclude[Object] or Object.Name == "UiBlurLayer" then
@@ -3813,15 +3846,47 @@ local UiBlur = (function()
 								then 0
 								elseif Object.TextYAlignment == Enum.TextYAlignment.Bottom then Size.Y - TextHeight
 								else (Size.Y - TextHeight) / 2
-							Fill(
-								Left + OffsetX,
-								Top + OffsetY,
-								Left + OffsetX + TextWidth,
-								Top + OffsetY + TextHeight,
-								Clip,
-								Object.TextColor3,
-								(1 - Object.TextTransparency) * ChildOpacity * 0.45
-							)
+							local TextGradient = FindGradient(Object)
+							if TextGradient then
+								FillGradient(
+									Left + OffsetX,
+									Top + OffsetY,
+									Left + OffsetX + TextWidth,
+									Top + OffsetY + TextHeight,
+									Clip,
+									Object.TextColor3,
+									(1 - Object.TextTransparency) * ChildOpacity * 0.7,
+									TextGradient,
+									Left,
+									Top,
+									Right,
+									Bottom
+								)
+							else
+								Fill(
+									Left + OffsetX,
+									Top + OffsetY,
+									Left + OffsetX + TextWidth,
+									Top + OffsetY + TextHeight,
+									Clip,
+									Object.TextColor3,
+									(1 - Object.TextTransparency) * ChildOpacity * 0.45
+								)
+							end
+						end
+					elseif Object:IsA("ViewportFrame") then
+						if Object.ImageTransparency < 1 and Object.CurrentCamera and #Viewports < MaxViewports then
+							table.insert(Viewports, {
+								Frame = Object,
+								Camera = Object.CurrentCamera,
+								Left = Left,
+								Top = Top,
+								Width = Size.X,
+								Height = Size.Y,
+								Clip = { Clip[1], Clip[2], Clip[3], Clip[4] },
+								Strength = (1 - Object.ImageTransparency) * ChildOpacity,
+								Hash = ViewportHash(Object),
+							})
 						end
 					elseif Object:IsA("ImageLabel") or Object:IsA("ImageButton") then
 						local Source = Object.ImageContent
@@ -3942,6 +4007,7 @@ local UiBlur = (function()
 
 			local Created = Backdrop.FromPixels(Area, Pixels, Width, Height)
 			Created.Pictures = Pictures
+			Created.Viewports = Viewports
 			Created.Underlay = Underlay or {}
 			return Created
 		end)
@@ -3988,6 +4054,8 @@ local UiBlur = (function()
 				elseif ImageClasses[ClassName] then
 					local Tint = Object.ImageColor3
 					Mix(#Object.Image + Tint.R + Tint.G * 3 + Tint.B * 7 + Object.ImageTransparency * 11)
+				elseif ClassName == "ViewportFrame" then
+					Mix(ViewportHash(Object) + Object.ImageTransparency * 11)
 				end
 				if ClassName == "CanvasGroup" then
 					Mix(Object.GroupTransparency * 19)
@@ -4246,6 +4314,9 @@ local UiBlur = (function()
 		for _, Entry in Source.Pictures or {} do
 			table.insert(Parts, string.format("P%.1f,%.1f,%.1f,%.1f,%.2f,%s,%s,%s", Entry.Left, Entry.Top, Entry.Width, Entry.Height, Entry.Strength, Entry.Image, tostring(Entry.ScaleType), tostring(Entry.Color)))
 		end
+		for _, Entry in Source.Viewports or {} do
+			table.insert(Parts, string.format("V%.1f,%.1f,%.1f,%.1f,%.2f,%d", Entry.Left, Entry.Top, Entry.Width, Entry.Height, Entry.Strength, Entry.Hash))
+		end
 		return table.concat(Parts, "|")
 	end
 
@@ -4258,7 +4329,9 @@ local UiBlur = (function()
 			if State.PictureKey ~= Key then
 				State.PictureKey = Key
 				State.PictureCopies = {}
+				State.ViewportCopies = {}
 				Holder:ClearAllChildren()
+				State.Viewports:ClearAllChildren()
 				for _, Entry in (Source and Source.Underlay) or {} do
 					local Clip = Entry.Clip
 					local Clipper = Instance.new("Frame")
@@ -4321,6 +4394,62 @@ local UiBlur = (function()
 						end
 					end
 				end
+				for _, Entry in (Source and Source.Viewports) or {} do
+					local Clip = Entry.Clip
+					local Original = Entry.Frame
+					local Clipper = Instance.new("Frame")
+					Clipper.BackgroundTransparency = 1
+					Clipper.BorderSizePixel = 0
+					Clipper.ClipsDescendants = true
+					Clipper.Position = UDim2.fromOffset(Clip[1], Clip[2])
+					Clipper.Size = UDim2.fromOffset(math.max(Clip[3] - Clip[1], 0), math.max(Clip[4] - Clip[2], 0))
+					Clipper.Parent = State.Viewports
+
+					local Group = Instance.new("CanvasGroup")
+					Group.BackgroundTransparency = 1
+					Group.BorderSizePixel = 0
+					Group.Position = UDim2.fromOffset(Entry.Left - Clip[1], Entry.Top - Clip[2])
+					Group.Size = UDim2.fromOffset(Entry.Width, Entry.Height)
+					Group.GroupTransparency = 1 - math.clamp(Entry.Strength, 0, 1)
+					Group.Parent = Clipper
+
+					local Index = 0
+					local function Copy(X: number, Y: number)
+						Index += 1
+						local Port = Instance.new("ViewportFrame")
+						Port.BackgroundTransparency = 1
+						Port.BorderSizePixel = 0
+						Port.Size = UDim2.fromScale(1, 1)
+						Port.ImageTransparency = 1 - 1 / Index
+						Port.ImageColor3 = Original.ImageColor3
+						Port.Ambient = Original.Ambient
+						Port.LightColor = Original.LightColor
+						Port.LightDirection = Original.LightDirection
+						Port.ZIndex = Index
+						for _, Child in Original:GetChildren() do
+							if not Child:IsA("Camera") then
+								local Clone = Child:Clone()
+								if Clone then
+									Clone.Parent = Port
+								end
+							end
+						end
+						local Camera = Instance.new("Camera")
+						Camera.CFrame = Entry.Camera.CFrame
+						Camera.FieldOfView = Entry.Camera.FieldOfView
+						Camera.Parent = Port
+						Port.CurrentCamera = Camera
+						Port.Parent = Group
+						table.insert(State.ViewportCopies, { Port = Port, Camera = Camera, Origin = Entry.Camera, X = X, Y = Y })
+					end
+					Copy(0, 0)
+					for _, Ring in PictureRings do
+						for Step = 0, Ring.Count - 1 do
+							local Angle = math.rad(Ring.Phase + Step * 360 / Ring.Count)
+							Copy(math.cos(Angle) * Ring.Scale, math.sin(Angle) * Ring.Scale)
+						end
+					end
+				end
 			else
 				for _, Entry in (Source and Source.Underlay) or {} do
 					if Entry.Gradient then
@@ -4333,6 +4462,23 @@ local UiBlur = (function()
 		local Radius = Values.Blur * 1.5
 		for _, Item in State.PictureCopies do
 			Item.Label.Position = UDim2.fromOffset(Item.X * Radius, Item.Y * Radius)
+		end
+		for _, Item in State.ViewportCopies do
+			Item.Port.Position = UDim2.fromOffset(Item.X * Radius, Item.Y * Radius)
+		end
+	end
+
+	local function SyncViewports(Self: any)
+		for _, Item in Self.State.ViewportCopies do
+			local Origin = Item.Origin
+			if Origin.Parent then
+				if Item.Camera.CFrame ~= Origin.CFrame then
+					Item.Camera.CFrame = Origin.CFrame
+				end
+				if Item.Camera.FieldOfView ~= Origin.FieldOfView then
+					Item.Camera.FieldOfView = Origin.FieldOfView
+				end
+			end
 		end
 	end
 
@@ -4351,10 +4497,12 @@ local UiBlur = (function()
 		if State.PlacedPosition ~= Position then
 			State.PlacedPosition = Position
 			State.Pictures.Position = Position
+			State.Viewports.Position = Position
 		end
 		if State.PlacedSize ~= PictureSize then
 			State.PlacedSize = PictureSize
 			State.Pictures.Size = PictureSize
+			State.Viewports.Size = PictureSize
 		end
 		local Image: ImageLabel = State.Image
 		if Image.Position ~= Position then
@@ -4517,6 +4665,7 @@ local UiBlur = (function()
 		end
 
 		PlaceImage(Self)
+		SyncViewports(Self)
 
 		if State.Busy then
 			return
@@ -4719,11 +4868,18 @@ local UiBlur = (function()
 		Pictures.ZIndex = 0
 		Pictures.Parent = Layer
 
+		local Viewports = Instance.new("Frame")
+		Viewports.Name = "Viewports"
+		Viewports.BackgroundTransparency = 1
+		Viewports.BorderSizePixel = 0
+		Viewports.ZIndex = 2
+		Viewports.Parent = Layer
+
 		local TintFrame = Instance.new("Frame")
 		TintFrame.Name = "Tint"
 		TintFrame.BorderSizePixel = 0
 		TintFrame.Size = UDim2.fromScale(1, 1)
-		TintFrame.ZIndex = 2
+		TintFrame.ZIndex = 3
 		TintFrame.Parent = Layer
 
 		local TileSize = UiBlur.Settings.NoiseTileSize
@@ -4734,7 +4890,7 @@ local UiBlur = (function()
 		NoiseLabel.Size = UDim2.fromScale(1, 1)
 		NoiseLabel.ScaleType = Enum.ScaleType.Tile
 		NoiseLabel.TileSize = UDim2.fromOffset(TileSize, TileSize)
-		NoiseLabel.ZIndex = 3
+		NoiseLabel.ZIndex = 4
 		NoiseLabel.Visible = false
 		NoiseLabel.Parent = Layer
 
@@ -4744,8 +4900,10 @@ local UiBlur = (function()
 				Layer = Layer,
 				Image = Image,
 				Pictures = Pictures,
+				Viewports = Viewports,
 				PictureSource = nil,
 				PictureCopies = {},
+				ViewportCopies = {},
 				TintFrame = TintFrame,
 				NoiseLabel = NoiseLabel,
 				NoiseReady = false,
@@ -4829,6 +4987,7 @@ local Creator = {
 			BackgroundColor3 = Color3.new(1, 1, 1),
 			BorderColor3 = Color3.new(0, 0, 0),
 			Font = Enum.Font.SourceSans,
+			RichText = true,
 			Text = "",
 			TextColor3 = Color3.new(0, 0, 0),
 			BackgroundTransparency = 1,
@@ -4839,6 +4998,7 @@ local Creator = {
 			BorderColor3 = Color3.new(0, 0, 0),
 			AutoButtonColor = false,
 			Font = Enum.Font.SourceSans,
+			RichText = true,
 			Text = "",
 			TextColor3 = Color3.new(0, 0, 0),
 			TextSize = 14,
@@ -4848,6 +5008,7 @@ local Creator = {
 			BorderColor3 = Color3.new(0, 0, 0),
 			ClearTextOnFocus = false,
 			Font = Enum.Font.SourceSans,
+			RichText = true,
 			Text = "",
 			TextColor3 = Color3.new(0, 0, 0),
 			TextSize = 14,
@@ -5956,6 +6117,7 @@ function Creator.New(className: string, properties: Props?, children: { Instance
 	local parent: Instance? = nil
 	local themeTag: ThemeTag? = nil
 	local iconData: any = nil
+	local miniMessage: boolean? = nil
 
 	if properties then
 		for name, value in properties do
@@ -5963,6 +6125,8 @@ function Creator.New(className: string, properties: Props?, children: { Instance
 				themeTag = value
 			elseif name == "Parent" then
 				parent = value
+			elseif name == "MiniMessage" then
+				miniMessage = value
 			elseif name == "Name" then
 
 				instance.Name = instance.ClassName
@@ -5976,6 +6140,17 @@ function Creator.New(className: string, properties: Props?, children: { Instance
 
 	if iconData then
 		Creator.SetImage(instance, iconData)
+	end
+
+	if
+		miniMessage ~= false
+		and Library.MiniMessage ~= false
+		and (resolved == "TextLabel" or resolved == "TextButton")
+	then
+		local Text = instance.Text
+		if Text ~= "" and Creator.HasMiniMessage(Text) then
+			instance.Text = Creator.MiniMessage(Text)
+		end
 	end
 
 	if children then
@@ -6146,6 +6321,460 @@ function Creator.ApplyText(Object)
 		Object.TextColor3 = Entry.Force
 	else
 		Creator.OverrideTag(Object, SharedTag("TextColor3", Entry.Key))
+	end
+end
+
+local MiniColors: { [string]: string } = {
+	black = "#000000",
+	dark_blue = "#0000AA",
+	dark_green = "#00AA00",
+	dark_aqua = "#00AAAA",
+	dark_red = "#AA0000",
+	dark_purple = "#AA00AA",
+	gold = "#FFAA00",
+	gray = "#AAAAAA",
+	grey = "#AAAAAA",
+	dark_gray = "#555555",
+	dark_grey = "#555555",
+	blue = "#5555FF",
+	green = "#55FF55",
+	aqua = "#55FFFF",
+	cyan = "#55FFFF",
+	red = "#FF5555",
+	light_purple = "#FF55FF",
+	magenta = "#FF55FF",
+	yellow = "#FFFF55",
+	white = "#FFFFFF",
+	orange = "#FFAA00",
+	pink = "#FF55FF",
+	lime = "#55FF55",
+	brown = "#AA5500",
+}
+
+local MiniFormats: { [string]: string } = {
+	bold = "b",
+	italic = "i",
+	underline = "u",
+	underlined = "u",
+	strikethrough = "s",
+	strike = "s",
+}
+
+local function MiniParseColor(Text: string?): Color3?
+	if not Text then
+		return nil
+	end
+	Text = string.lower((string.gsub(Text, "^%s*(.-)%s*$", "%1")))
+	local Named = MiniColors[Text]
+	if Named then
+		Text = Named
+	end
+	local Hex = string.match(Text, "^#?(%x%x%x%x%x%x)$")
+	if not Hex then
+		local Short = string.match(Text, "^#(%x%x%x)$")
+		if Short then
+			Hex = (string.gsub(Short, ".", "%0%0"))
+		end
+	end
+	if not Hex then
+		return nil
+	end
+	return Color3.fromRGB(
+		tonumber(string.sub(Hex, 1, 2), 16) :: number,
+		tonumber(string.sub(Hex, 3, 4), 16) :: number,
+		tonumber(string.sub(Hex, 5, 6), 16) :: number
+	)
+end
+
+local function MiniToHex(Color: Color3): string
+	return string.format(
+		"#%02X%02X%02X",
+		math.floor(Color.R * 255 + 0.5),
+		math.floor(Color.G * 255 + 0.5),
+		math.floor(Color.B * 255 + 0.5)
+	)
+end
+
+local function MiniSampleColors(Colors: { Color3 }, Alpha: number): Color3
+	local Count = #Colors
+	if Count == 1 then
+		return Colors[1]
+	end
+	local Scaled = math.clamp(Alpha, 0, 1) * (Count - 1)
+	local Index = math.min(math.floor(Scaled), Count - 2)
+	return Colors[Index + 1]:Lerp(Colors[Index + 2], Scaled - Index)
+end
+
+local function MiniTokenize(Text: string)
+	local Tokens = {}
+	local Cursor = 1
+	local Found = false
+	while true do
+		local Start, Finish, Closing, Body = string.find(Text, "<(/?)([^<>]*)>", Cursor)
+		if not Start then
+			break
+		end
+		if Start > Cursor then
+			table.insert(Tokens, { Kind = "Text", Value = string.sub(Text, Cursor, Start - 1) })
+		end
+
+		local Raw = string.sub(Text, Start, Finish)
+		local Lower = string.lower(Body)
+		local Name, Args = string.match(Lower, "^([^:]+):?(.*)$")
+		local Token = { Kind = "Raw", Value = Raw }
+
+		if Name and not string.find(Body, "[\"=]") then
+			Name = (string.gsub(Name, "^%s*(.-)%s*$", "%1"))
+			if Closing == "" and (Name == "br" or Name == "nl" or Name == "newline") then
+				Token = { Kind = "Break" }
+			elseif Name == "reset" or Name == "obfuscated" or Name == "gradient" or MiniFormats[Name] then
+				Token = { Kind = "Tag", Name = Name, Args = Args, Closing = Closing == "/", Raw = Raw }
+			elseif Name == "color" or Name == "colour" or Name == "c" then
+				Token = { Kind = "Tag", Name = "color", Args = Args, Closing = Closing == "/", Raw = Raw }
+			elseif MiniColors[Name] or string.match(Name, "^#%x%x%x%x%x%x$") or string.match(Name, "^#%x%x%x$") then
+				Token = { Kind = "Tag", Name = "color", Args = Name, Closing = Closing == "/", Raw = Raw }
+			end
+		end
+
+		if Token.Kind == "Tag" then
+			Found = true
+		end
+		table.insert(Tokens, Token)
+		Cursor = Finish + 1
+	end
+	if Cursor <= #Text then
+		table.insert(Tokens, { Kind = "Text", Value = string.sub(Text, Cursor) })
+	end
+	return Tokens, Found
+end
+
+function Creator.HasMiniMessage(Text: any): boolean
+	if type(Text) ~= "string" or not string.find(Text, "<", 1, true) then
+		return false
+	end
+	local _, Found = MiniTokenize(Text)
+	return Found
+end
+
+function Creator.MiniMessage(Text: any): any
+	if type(Text) ~= "string" or not string.find(Text, "<", 1, true) then
+		return Text
+	end
+
+	local Tokens, Found = MiniTokenize(Text)
+	if not Found then
+		return Text
+	end
+
+	local Out = {}
+	local Open = {}
+	local Paints = {}
+
+	local function OpenTag(Group: string, Opening: string)
+		table.insert(Out, Opening)
+		table.insert(Open, { Group = Group, Opening = Opening })
+	end
+
+	local function CloseGroup(Group: string)
+		local Position
+		for Index = #Open, 1, -1 do
+			if Open[Index].Group == Group then
+				Position = Index
+				break
+			end
+		end
+		if not Position then
+			return
+		end
+		local Reopen = {}
+		for Index = #Open, Position, -1 do
+			table.insert(Out, "</" .. Open[Index].Group .. ">")
+			if Index > Position then
+				table.insert(Reopen, 1, Open[Index])
+			end
+			table.remove(Open, Index)
+		end
+		for _, Entry in Reopen do
+			OpenTag(Entry.Group, Entry.Opening)
+		end
+	end
+
+	local function CloseAll()
+		for Index = #Open, 1, -1 do
+			table.insert(Out, "</" .. Open[Index].Group .. ">")
+		end
+		table.clear(Open)
+	end
+
+	local function CountVisible(From: number): number
+		local Depth = 1
+		local Total = 0
+		for Index = From, #Tokens do
+			local Token = Tokens[Index]
+			if Token.Kind == "Tag" and Token.Name == "gradient" then
+				Depth += if Token.Closing then -1 else 1
+				if Depth == 0 then
+					break
+				end
+			elseif Token.Kind == "Text" then
+				Total += utf8.len(Token.Value) or #Token.Value
+			end
+		end
+		return Total
+	end
+
+	for Index, Token in Tokens do
+		local Kind = Token.Kind
+		if Kind == "Text" then
+			local Paint = Paints[#Paints]
+			if Paint then
+				for _, Code in utf8.codes(Token.Value) do
+					local Character = utf8.char(Code)
+					local Alpha = if Paint.Total > 1 then Paint.Index / (Paint.Total - 1) else 0
+					Paint.Index += 1
+					table.insert(
+						Out,
+						'<font color="' .. MiniToHex(MiniSampleColors(Paint.Colors, Alpha)) .. '">' .. Character .. "</font>"
+					)
+				end
+			else
+				table.insert(Out, Token.Value)
+			end
+		elseif Kind == "Break" then
+			table.insert(Out, "\n")
+		elseif Kind == "Raw" then
+			table.insert(Out, Token.Value)
+		else
+			local Name = Token.Name
+			if Name == "reset" then
+				CloseAll()
+				table.clear(Paints)
+			elseif Name == "obfuscated" then
+			elseif Name == "gradient" then
+				if Token.Closing then
+					table.remove(Paints)
+				else
+					local Colors = {}
+					for Part in string.gmatch(Token.Args, "[^:]+") do
+						local Color = MiniParseColor(Part)
+						if Color then
+							table.insert(Colors, Color)
+						end
+					end
+					if #Colors == 0 then
+						table.insert(Colors, Color3.new(1, 1, 1))
+					end
+					table.insert(Paints, { Colors = Colors, Total = CountVisible(Index + 1), Index = 0 })
+				end
+			elseif Name == "color" then
+				if Token.Closing then
+					CloseGroup("font")
+				else
+					local Color = MiniParseColor(Token.Args)
+					if Color then
+						OpenTag("font", '<font color="' .. MiniToHex(Color) .. '">')
+					end
+				end
+			else
+				local Group = MiniFormats[Name]
+				if Token.Closing then
+					CloseGroup(Group)
+				else
+					OpenTag(Group, "<" .. Group .. ">")
+				end
+			end
+		end
+	end
+
+	CloseAll()
+	return table.concat(Out)
+end
+
+function Creator.SetMiniText(Object: any, Text: any)
+	if type(Text) == "string" and Library.MiniMessage ~= false and Creator.HasMiniMessage(Text) then
+		Object.RichText = true
+		Object.Text = Creator.MiniMessage(Text)
+		return
+	end
+	Object.Text = Text
+end
+
+function Creator.SampleColorSequence(Sequence: ColorSequence, Time: number): Color3
+	local Keypoints = Sequence.Keypoints
+	Time = math.clamp(Time, 0, 1)
+	for Index = 1, #Keypoints - 1 do
+		local From, To = Keypoints[Index], Keypoints[Index + 1]
+		if Time <= To.Time then
+			local Span = To.Time - From.Time
+			if Span <= 0 then
+				return To.Value
+			end
+			return From.Value:Lerp(To.Value, (Time - From.Time) / Span)
+		end
+	end
+	return Keypoints[#Keypoints].Value
+end
+
+function Creator.SampleNumberSequence(Sequence: NumberSequence, Time: number): number
+	local Keypoints = Sequence.Keypoints
+	Time = math.clamp(Time, 0, 1)
+	for Index = 1, #Keypoints - 1 do
+		local From, To = Keypoints[Index], Keypoints[Index + 1]
+		if Time <= To.Time then
+			local Span = To.Time - From.Time
+			if Span <= 0 then
+				return To.Value
+			end
+			return From.Value + (To.Value - From.Value) * ((Time - From.Time) / Span)
+		end
+	end
+	return Keypoints[#Keypoints].Value
+end
+
+function Creator.ToColorSequence(Value: any): ColorSequence?
+	local Kind = typeof(Value)
+	if Kind == "ColorSequence" then
+		return Value
+	end
+	if Kind == "Color3" then
+		return ColorSequence.new(Value)
+	end
+	if Kind == "string" then
+		local Color = MiniParseColor(Value)
+		if Color then
+			return ColorSequence.new(Color)
+		end
+		local Colors = {}
+		for Part in string.gmatch(Value, "[^:,%s]+") do
+			local Parsed = MiniParseColor(Part)
+			if Parsed then
+				table.insert(Colors, Parsed)
+			end
+		end
+		Value = Colors
+		Kind = "table"
+	end
+	if Kind ~= "table" or #Value == 0 then
+		return nil
+	end
+
+	local Entries = {}
+	for Index, Entry in Value do
+		local Color = Entry
+		local Time = nil
+		if type(Entry) == "table" then
+			Color = Entry.Color or Entry.Value or Entry[2]
+			Time = Entry.Time or Entry.T or Entry[1]
+		end
+		if type(Color) == "string" then
+			Color = MiniParseColor(Color)
+		end
+		if typeof(Color) == "Color3" then
+			table.insert(Entries, { Time = Time, Color = Color, Index = Index })
+		end
+	end
+
+	local Count = #Entries
+	if Count == 0 then
+		return nil
+	end
+	if Count == 1 then
+		return ColorSequence.new(Entries[1].Color)
+	end
+
+	local Keypoints = {}
+	local Last = -1
+	for Index, Entry in Entries do
+		local Time = if type(Entry.Time) == "number" then Entry.Time else (Index - 1) / (Count - 1)
+		Time = math.clamp(Time, 0, 1)
+		if Index == 1 then
+			Time = 0
+		elseif Index == Count then
+			Time = 1
+		end
+		Time = math.max(Time, Last)
+		Last = Time
+		table.insert(Keypoints, ColorSequenceKeypoint.new(Time, Entry.Color))
+	end
+	return ColorSequence.new(Keypoints)
+end
+
+Creator.Paints = setmetatable({}, { __mode = "k" })
+Creator.PaintSpin = {}
+local PaintConnection: RBXScriptConnection?
+
+local function StepPaints(Delta: number)
+	local Active = false
+	for Object, Speed in next, Creator.PaintSpin do
+		local Entry = Creator.Paints[Object]
+		if not Entry or not Entry.Gradient.Parent then
+			Creator.PaintSpin[Object] = nil
+		else
+			Active = true
+			Entry.Gradient.Rotation = (Entry.Gradient.Rotation + Speed * Delta) % 360
+		end
+	end
+	if not Active and PaintConnection then
+		PaintConnection:Disconnect()
+		PaintConnection = nil
+	end
+end
+
+function Creator.SetTextPaint(Object: any, Value: any, Options: { [string]: any }?)
+	Options = Options or {}
+	local Entry = Creator.Paints[Object]
+
+	if Value == nil then
+		if Entry then
+			Creator.PaintSpin[Object] = nil
+			Entry.Gradient:Destroy()
+			Creator.Paints[Object] = nil
+			if Entry.Key then
+				Creator.OverrideTag(Object, { TextColor3 = Entry.Key })
+			end
+		end
+		return
+	end
+
+	if not Entry then
+		local Registered = Creator.Registry[Object]
+		Entry = {
+			Key = Registered and Registered.Properties.TextColor3 or nil,
+			Gradient = Instance.new("UIGradient"),
+		}
+		Entry.Gradient.Enabled = false
+		Entry.Gradient.Parent = Object
+		Creator.Paints[Object] = Entry
+	end
+
+	Creator.RemoveTag(Object)
+
+	if typeof(Value) == "Color3" then
+		Creator.PaintSpin[Object] = nil
+		Entry.Gradient.Enabled = false
+		Object.TextColor3 = Value
+		return
+	end
+
+	local Sequence = Creator.ToColorSequence(Value)
+	if not Sequence then
+		return
+	end
+
+	Object.TextColor3 = Color3.new(1, 1, 1)
+	Entry.Gradient.Color = Sequence
+	Entry.Gradient.Rotation = Options.Rotation or 0
+	Entry.Gradient.Offset = Options.Offset or Vector2.zero
+	Entry.Gradient.Enabled = true
+
+	local Speed = Options.Speed
+	if type(Speed) == "number" and Speed ~= 0 then
+		Creator.PaintSpin[Object] = Speed
+		if not PaintConnection then
+			PaintConnection = Heartbeat:Connect(StepPaints)
+		end
+	else
+		Creator.PaintSpin[Object] = nil
 	end
 end
 
@@ -6978,7 +7607,7 @@ local function Resolve(Icon, Context, Config)
 	return nil
 end
 
--- Lucide or something o Algo 
+-- Lucide or something o Algo
 local Icons = {
 	["lucide-accessibility"] = "rbxassetid://10709751939",
 	["lucide-activity"] = "rbxassetid://10709752035",
@@ -7839,7 +8468,7 @@ do
 
 	local AllowedPrefixes: { string } = {
 		"https://raw.githubusercontent.com/StyearX/Icons/",
-		"https://raw.githubusercontent.com/AlexanderTheWorst/Gloam/", -- this dude is stupid nigger he should kill himself
+		"https://raw.githubusercontent.com/AlexanderTheWorst/Gloam/", -- this dude is stupid
 	}
 	local DefaultPack = "lucide"
 	local DefaultMaterialSize = "36"
@@ -10314,8 +10943,39 @@ Components.Section = (function()
 		return List
 	end
 
+	function Section:ResolveSpace(List)
+		for Index, Row in List do
+			if Row.Kind == "Group" and Row.AutoSpace then
+				local Previous, Next = List[Index - 1], List[Index + 1]
+				local Vertical = Row.Direction == "Vertical"
+				local Bottom = false
+				local Top = false
+
+				if Next == nil then
+					Bottom = self.Up == nil
+				elseif Next.Kind == "Group" then
+					Bottom = true
+				elseif not Next.IsSpace then
+					Bottom = Vertical
+				end
+
+				if Previous ~= nil then
+					if Previous.Kind == "Group" then
+						Top = Previous.Spacing <= 0
+					elseif not Previous.IsSpace then
+						Top = Vertical or Row.Holder.Header.Visible
+					end
+				end
+
+				Row:ApplySpace(if Top then Row.SpaceSize else 0, if Bottom then Row.SpaceSize else 0)
+			end
+		end
+	end
+
 	function Section:Collect(Cells, Groups, State)
-		for _, Row in self:Rows() do
+		local List = self:Rows()
+		self:ResolveSpace(List)
+		for _, Row in List do
 			if Row.Kind == "Group" then
 				local Holder = Row.Holder
 				if Holder.Header.Visible or Row.Direction == "Vertical" then
@@ -10357,7 +11017,7 @@ Components.Section = (function()
 		for _, Row in Holder:Rows() do
 			if Row.Kind == "Group" and Row.Direction == "Horizontal" then
 				local Strip = Row.Holder
-				Strip.Backing.Visible = Fill == 0 and #Strip:Rows() > 0
+				Strip.Backing.Visible = Fill == 0 and not Row.Merged and #Strip:Rows() > 0
 				Strip.Shadow.Empty = not Strip.Backing.Visible or Strip.Container.AbsoluteSize.Y <= 0
 				ApplyDepth(Strip.Shadow)
 
@@ -11122,21 +11782,46 @@ Components.Element = (function()
 
 	function Row:BindControl(Control, Gap)
 		Gap = Gap or 14
+		local MinLabel = 110
+		local Wrapped = false
+
 		local function Update()
-			if Control.Visible then
-				self:SetReserve(Control.AbsoluteSize.X + Gap)
-			else
+			if not Control.Visible then
 				self:SetReserve(0)
+				return
+			end
+
+			local Need = Control.AbsoluteSize.X + Gap
+			local RowWidth = self.Content.AbsoluteSize.X
+			local Crowded = RowWidth > 0 and RowWidth - (self.LeftSpace + 14 + Need) < MinLabel
+
+			if Crowded then
+				if not Wrapped then
+					Wrapped = true
+					Control.AnchorPoint = Vector2.new(1, 1)
+					Control.Position = UDim2.new(1, -14, 1, -6)
+				end
+				self:SetExtra(Control.AbsoluteSize.Y + 6)
+				self:SetReserve(0)
+			else
+				if Wrapped then
+					Wrapped = false
+					Control.AnchorPoint = Vector2.new(1, 0.5)
+					Control.Position = UDim2.new(1, -14, 0.5, 0)
+					self:SetExtra(0)
+				end
+				self:SetReserve(Need)
 			end
 		end
 		Creator.AddSignal(Control:GetPropertyChangedSignal("AbsoluteSize"), Update)
 		Creator.AddSignal(Control:GetPropertyChangedSignal("Visible"), Update)
+		Creator.AddSignal(self.Content:GetPropertyChangedSignal("AbsoluteSize"), Update)
 		Update()
 	end
 
 	function Row:SetTitle(Set)
 		self.Title = Set or ""
-		self.TitleLabel.Text = self.Title
+		Creator.SetMiniText(self.TitleLabel, self.Title)
 	end
 
 	function Row:SetMarquee(Value)
@@ -11149,7 +11834,7 @@ Components.Element = (function()
 		end
 		self.Desc = Set
 		self.DescLabel.Visible = Set ~= ""
-		self.DescLabel.Text = Set
+		Creator.SetMiniText(self.DescLabel, Set)
 	end
 
 	function Row:SetIcon(Icon)
@@ -11900,7 +12585,7 @@ Components.TitleBar = (function()
 
 		TitleBar.Title = Label({
 			RichText = true,
-			Text = Config.Title or "",
+			Text = Creator.MiniMessage(Config.Title or ""),
 			TextSize = 17,
 			Weight = "SemiBold",
 			Size = UDim2.fromScale(0, 1),
@@ -11910,7 +12595,7 @@ Components.TitleBar = (function()
 
 		TitleBar.SubTitle = Label({
 			RichText = true,
-			Text = Config.SubTitle or "",
+			Text = Creator.MiniMessage(Config.SubTitle or ""),
 			TextSize = 12,
 			Weight = "Regular",
 			Tag = "SubText",
@@ -13085,28 +13770,111 @@ Components.Notification = (function()
 end)()
 
 Components.Toast = (function()
+	local Spring = Flipper.Spring.new
+	local Instant = Flipper.Instant.new
+
 	local Toast = {
 		Active = {},
 		List = {},
+		Holders = {},
 		Counter = 0,
 		Limit = 3,
 		Margin = 28,
 		MaxText = 300,
 		MinDuration = 2.5,
 		MaxDuration = 6,
+		Slide = 48,
+		Origin = "Bottom",
+		Exit = nil,
+		Origins = { "Top", "Bottom", "Left", "Right", "TopLeft", "TopRight", "BottomLeft", "BottomRight", "Center" },
+	}
+
+	local Anchors = {
+		Top = { X = 0.5, Y = 0 },
+		Bottom = { X = 0.5, Y = 1 },
+		Left = { X = 0, Y = 0.5 },
+		Right = { X = 1, Y = 0.5 },
+		TopLeft = { X = 0, Y = 0 },
+		TopRight = { X = 1, Y = 0 },
+		BottomLeft = { X = 0, Y = 1 },
+		BottomRight = { X = 1, Y = 1 },
+		Center = { X = 0.5, Y = 0.5 },
+	}
+
+	local Aliases = {
+		top = "Top",
+		topcenter = "Top",
+		bottom = "Bottom",
+		bottomcenter = "Bottom",
+		left = "Left",
+		centerleft = "Left",
+		right = "Right",
+		centerright = "Right",
+		topleft = "TopLeft",
+		topright = "TopRight",
+		bottomleft = "BottomLeft",
+		bottomright = "BottomRight",
+		center = "Center",
+		middle = "Center",
 	}
 
 	local Types = {
-		Info = { Icon = "info", Color = Color3.fromRGB(10, 132, 255) },
-		Success = { Icon = "check-circle", Color = Color3.fromRGB(50, 215, 75) },
-		Warning = { Icon = "alert-triangle", Color = Color3.fromRGB(255, 214, 10) },
-		Error = { Icon = "x-circle", Color = Color3.fromRGB(255, 69, 58) },
+		Info = { Icon = "info", Tag = "Info" },
+		Success = { Icon = "check-circle", Tag = "Success" },
+		Warning = { Icon = "alert-triangle", Tag = "Warning" },
+		Error = { Icon = "x-circle", Tag = "Danger" },
 	}
 
+	function Toast.Normalize(Value)
+		if type(Value) ~= "string" then
+			return nil
+		end
+		local Key = string.lower(Value)
+		Key = string.gsub(Key, "[%s_%-]", "")
+		return Aliases[Key]
+	end
+
+	function Toast.Resolve(Config)
+		local Origin = Config.Origin
+		local From, To
+
+		if type(Origin) == "table" then
+			From = Toast.Normalize(Origin.From or Origin[1])
+			To = Toast.Normalize(Origin.To or Origin.Exit or Origin[2])
+		else
+			From = Toast.Normalize(Origin)
+		end
+
+		From = From or Toast.Normalize(Config.From) or Toast.Normalize(Toast.Origin) or "Bottom"
+		To = To or Toast.Normalize(Config.To) or Toast.Normalize(Toast.Exit) or From
+		return From, To
+	end
+
+	local function Direction(Name)
+		local Anchor = Anchors[Name] or Anchors.Bottom
+		local Dir = Vector2.new((Anchor.X - 0.5) * 2, (Anchor.Y - 0.5) * 2)
+		if Dir.X == 0 and Dir.Y == 0 then
+			Dir = Vector2.new(0, 0.4)
+		end
+		return Dir
+	end
+
+	function Toast:SetOrigin(From, To)
+		local NewFrom = Toast.Normalize(From)
+		if NewFrom then
+			Toast.Origin = NewFrom
+		end
+		Toast.Exit = Toast.Normalize(To)
+		return Toast.Origin, Toast.Exit
+	end
+
+	function Toast:GetOrigin()
+		return Toast.Origin, Toast.Exit or Toast.Origin
+	end
+
 	function Toast:Layout()
-		local Holder = Toast.Holder
 		local Gui = Toast.Gui
-		if not (Holder and Gui) then
+		if not Gui then
 			return
 		end
 
@@ -13126,12 +13894,61 @@ Components.Toast = (function()
 			end
 		end
 
+		local Margin = Toast.Margin
+		local Header = (Inside and Window.NavPosition ~= "Bottom") and 58 or 0
 		local Footer = (Inside and Window.NavPosition == "Bottom") and 52 or 0
 		local Width = math.clamp(Extent.X - 32, 1, Toast.MaxText + 120)
-		local Height = math.max(Extent.Y - Toast.Margin * 2 - Footer, 1)
 
-		Holder.Position = UDim2.fromOffset(Origin.X + Extent.X / 2, Origin.Y + Extent.Y - Toast.Margin - Footer)
-		Holder.Size = UDim2.fromOffset(Width, Height)
+		for Name, Holder in Toast.Holders do
+			local Anchor = Anchors[Name]
+			local Top = Anchor.Y == 0
+			local Bottom = Anchor.Y == 1
+
+			local X = Origin.X + Extent.X * Anchor.X + (Anchor.X == 0 and Margin or (Anchor.X == 1 and -Margin or 0))
+			local Y
+			if Top then
+				Y = Origin.Y + Margin + Header
+			elseif Bottom then
+				Y = Origin.Y + Extent.Y - Margin - Footer
+			else
+				Y = Origin.Y + (Header + Extent.Y - Footer) / 2
+			end
+
+			local Height = math.max(Extent.Y - Margin * 2 - (Top and Header or 0) - (Bottom and Footer or 0), 1)
+			Holder.Position = UDim2.fromOffset(X, Y)
+			Holder.Size = UDim2.fromOffset(Width, Height)
+		end
+	end
+
+	function Toast:GetHolder(Name)
+		local Existing = Toast.Holders[Name]
+		if Existing then
+			return Existing
+		end
+
+		local Anchor = Anchors[Name]
+		local Horizontal = Anchor.X == 0 and Enum.HorizontalAlignment.Left
+			or (Anchor.X == 1 and Enum.HorizontalAlignment.Right or Enum.HorizontalAlignment.Center)
+		local Vertical = Anchor.Y == 0 and Enum.VerticalAlignment.Top
+			or (Anchor.Y == 1 and Enum.VerticalAlignment.Bottom or Enum.VerticalAlignment.Center)
+
+		local Holder = New("Frame", {
+			Name = Name,
+			AnchorPoint = Vector2.new(Anchor.X, Anchor.Y),
+			BackgroundTransparency = 1,
+			Parent = Toast.Gui,
+		}, {
+			New("UIListLayout", {
+				HorizontalAlignment = Horizontal,
+				VerticalAlignment = Vertical,
+				SortOrder = Enum.SortOrder.LayoutOrder,
+				Padding = UDim.new(0, 8),
+			}),
+		})
+
+		Toast.Holders[Name] = Holder
+		Toast:Layout()
+		return Holder
 	end
 
 	function Toast:Init(GUI)
@@ -13144,19 +13961,6 @@ Components.Toast = (function()
 		})
 		ProtectGui(Toast.Gui)
 
-		Toast.Holder = New("Frame", {
-			AnchorPoint = Vector2.new(0.5, 1),
-			BackgroundTransparency = 1,
-			Parent = Toast.Gui,
-		}, {
-			New("UIListLayout", {
-				HorizontalAlignment = Enum.HorizontalAlignment.Center,
-				VerticalAlignment = Enum.VerticalAlignment.Bottom,
-				SortOrder = Enum.SortOrder.LayoutOrder,
-				Padding = UDim.new(0, 8),
-			}),
-		})
-
 		Creator.AddSignal(Toast.Gui:GetPropertyChangedSignal("AbsoluteSize"), function()
 			Toast:Layout()
 		end)
@@ -13168,14 +13972,14 @@ Components.Toast = (function()
 		if Toast.Gui then
 			Toast.Gui:Destroy()
 			Toast.Gui = nil
-			Toast.Holder = nil
 		end
+		table.clear(Toast.Holders)
 		table.clear(Toast.Active)
 		table.clear(Toast.List)
 	end
 
 	function Toast:New(Config)
-		if not Toast.Holder then
+		if not Toast.Gui then
 			return nil
 		end
 		if type(Config) == "string" then
@@ -13192,36 +13996,69 @@ Components.Toast = (function()
 			return Existing
 		end
 
+		local From, To = Toast.Resolve(Config)
+		local Holder = Toast:GetHolder(From)
 		Toast:Layout()
-		while #Toast.List >= Toast.Limit do
-			Toast.List[1]:Close()
+
+		local Count = 0
+		for _, Other in Toast.List do
+			if Other.From == From then
+				Count += 1
+			end
+		end
+		while Count >= Toast.Limit do
+			local Oldest
+			for _, Other in Toast.List do
+				if Other.From == From then
+					Oldest = Other
+					break
+				end
+			end
+			if not Oldest then
+				break
+			end
+			Oldest:Close()
+			Count -= 1
 		end
 
 		Toast.Counter += 1
 
 		local Style = Types[Config.Type]
 		local IconId = Resolve(Config.Icon, "Notification", Config) or (Style and Asset(Style.Icon)) or nil
+		local IconColor = Config.IconColor or Config.Color
+		local Anchor = Anchors[From]
+		local Enter = Direction(From) * Toast.Slide
+		local Leave = Direction(To) * Toast.Slide
+
 		local NewToast = {
 			ClassType = "Notification",
 			Closed = false,
 			Token = 0,
+			From = From,
+			To = To,
 			Duration = Config.Duration or math.clamp(#Text * 0.05, Toast.MinDuration, Toast.MaxDuration),
 		}
 
-		NewToast.Icon = New("ImageLabel", {
+		local IconProps = {
 			Image = IconId or "",
 			Size = UDim2.fromOffset(16, 16),
 			BackgroundTransparency = 1,
-			ImageColor3 = Style and Style.Color or nil,
 			Visible = IconId ~= nil,
 			LayoutOrder = 1,
-			ThemeTag = if Style then nil else { ImageColor3 = "ToastText" },
-		})
+		}
+		if typeof(IconColor) == "Color3" then
+			IconProps.ImageColor3 = IconColor
+		else
+			IconProps.ThemeTag = {
+				ImageColor3 = type(IconColor) == "string" and IconColor or (Style and Style.Tag) or "Text",
+			}
+		end
+		NewToast.Icon = New("ImageLabel", IconProps)
 
 		NewToast.Label = Label({
 			Text = Text,
 			RichText = true,
-			Tag = "ToastText",
+			Tag = "Text",
 			Weight = "Medium",
 			TextSize = 13,
 			TextWrapped = true,
@@ -13234,6 +14071,19 @@ Components.Toast = (function()
 			Parent = NewToast.Label,
 		})
 
+		local function FitLabel()
+			local Text = NewToast.Label
+			Text.TextWrapped = false
+			Text.AutomaticSize = Enum.AutomaticSize.XY
+			Text.Size = UDim2.fromOffset(0, 16)
+			if Text.TextBounds.X > Toast.MaxText then
+				Text.TextWrapped = true
+				Text.AutomaticSize = Enum.AutomaticSize.Y
+				Text.Size = UDim2.fromOffset(Toast.MaxText, 16)
+			end
+		end
+		FitLabel()
+
 		local Action = Config.Action
 		if Action then
 			NewToast.Action = New("TextButton", {
@@ -13244,7 +14094,7 @@ Components.Toast = (function()
 				BackgroundTransparency = 0.88,
 				LayoutOrder = 3,
 				ThemeTag = {
-					BackgroundColor3 = "ToastText",
+					BackgroundColor3 = "Text",
 				},
 			}, {
 				Corner(8),
@@ -13254,7 +14104,7 @@ Components.Toast = (function()
 				}),
 				Label({
 					Text = Action.Title or "Action",
-					Tag = "ToastText",
+					Tag = "Text",
 					Weight = "SemiBold",
 					TextSize = 12,
 					TextXAlignment = Enum.TextXAlignment.Center,
@@ -13264,22 +14114,19 @@ Components.Toast = (function()
 			})
 		end
 
-		NewToast.Scale = New("UIScale", {
-			Scale = 0.92,
-		})
-
-		NewToast.Body = New("CanvasGroup", {
+		NewToast.Body = New("Frame", {
 			AutomaticSize = Enum.AutomaticSize.XY,
 			Size = UDim2.fromOffset(0, 0),
-			GroupTransparency = 1,
-			LayoutOrder = Toast.Counter,
-			Parent = Toast.Holder,
-			ThemeTag = {
-				BackgroundColor3 = "ToastBackground",
-			},
+			BackgroundColor3 = Color3.new(1, 1, 1),
 		}, {
 			Corner(16),
-			NewToast.Scale,
+			Stroke("AcrylicBorder", 0.2),
+			New("UIGradient", {
+				Rotation = 90,
+				ThemeTag = {
+					Color = "AcrylicGradient",
+				},
+			}),
 			New("UIPadding", {
 				PaddingTop = UDim.new(0, 10),
 				PaddingBottom = UDim.new(0, 10),
@@ -13297,11 +14144,51 @@ Components.Toast = (function()
 			NewToast.Action,
 		})
 
-		local _, SetTransparency = Creator.SpringMotor(1, NewToast.Body, "GroupTransparency", true)
-		local _, SetScale = Creator.SpringMotor(0.92, NewToast.Scale, "Scale", true)
+		NewToast.Fade = New("CanvasGroup", {
+			AutomaticSize = Enum.AutomaticSize.XY,
+			Size = UDim2.fromOffset(0, 0),
+			BackgroundTransparency = 1,
+			GroupTransparency = 1,
+			Position = UDim2.fromOffset(Enter.X, Enter.Y),
+		}, {
+			NewToast.Body,
+		})
+
+		NewToast.Wrap = New("Frame", {
+			BackgroundTransparency = 1,
+			Size = UDim2.fromOffset(0, 0),
+			LayoutOrder = (Anchor.Y == 1 or Anchor.Y == 0.5) and Toast.Counter or -Toast.Counter,
+			Parent = Holder,
+		}, {
+			NewToast.Fade,
+		})
+
+		local function Measure()
+			NewToast.Wrap.Size = UDim2.fromOffset(NewToast.Fade.AbsoluteSize.X, NewToast.Fade.AbsoluteSize.Y)
+		end
+		Creator.AddSignal(NewToast.Fade:GetPropertyChangedSignal("AbsoluteSize"), Measure)
+		Measure()
+
+		local Motor = Flipper.GroupMotor.new({ X = Enter.X, Y = Enter.Y, T = 1 })
+		Motor:OnStep(function(Values)
+			NewToast.Fade.Position = UDim2.fromOffset(Values.X, Values.Y)
+			NewToast.Fade.GroupTransparency = math.clamp(Values.T, 0, 1)
+		end)
+
+		local function Travel(X, Y, T)
+			local Goal = if Library.Config.ReducedMotion then Instant else function(Value)
+				return Spring(Value, { Frequency = 5 })
+			end
+			Motor:SetGoal({
+				X = Goal(if Library.Config.ReducedMotion then 0 else X),
+				Y = Goal(if Library.Config.ReducedMotion then 0 else Y),
+				T = Goal(T),
+			})
+		end
 
 		function NewToast:SetText(Value)
 			NewToast.Label.Text = tostring(Value or "")
+			FitLabel()
 		end
 
 		function NewToast:Extend(Duration)
@@ -13330,10 +14217,9 @@ Components.Toast = (function()
 			if Position then
 				table.remove(Toast.List, Position)
 			end
-			SetTransparency(1)
-			SetScale(0.92)
-			task.delay(0.3, function()
-				NewToast.Body:Destroy()
+			Travel(Leave.X, Leave.Y, 1)
+			task.delay(0.4, function()
+				NewToast.Wrap:Destroy()
 			end)
 		end
 
@@ -13349,8 +14235,7 @@ Components.Toast = (function()
 		Toast.Active[Key] = NewToast
 		table.insert(Toast.List, NewToast)
 
-		SetTransparency(0)
-		SetScale(1)
+		Travel(0, 0, 0)
 		NewToast:Extend()
 
 		return NewToast
@@ -17441,7 +18326,27 @@ Components.Window = (function()
 		end
 
 		function Window:SetTitleText(Value)
-			Window.TitleBar.Title.Text = Value or ""
+			Window.TitleBar.Title.Text = Creator.MiniMessage(Value or "")
+		end
+
+		function Window:SetTitleColor(Value, Options)
+			Window.TitleColor = Value
+			Window.TitleColorOptions = Options
+			Creator.SetTextPaint(Window.TitleBar.Title, Value, Options)
+		end
+
+		function Window:GetTitleColor()
+			return Window.TitleColor, Window.TitleColorOptions
+		end
+
+		function Window:SetSubTitleColor(Value, Options)
+			Window.SubTitleColor = Value
+			Window.SubTitleColorOptions = Options
+			Creator.SetTextPaint(Window.TitleBar.SubTitle, Value, Options)
+		end
+
+		function Window:GetSubTitleColor()
+			return Window.SubTitleColor, Window.SubTitleColorOptions
 		end
 
 		function Window:SetTitleTextVisible(Value)
@@ -17449,7 +18354,7 @@ Components.Window = (function()
 		end
 
 		function Window:SetSubTitle(Value)
-			Window.TitleBar.SubTitle.Text = Value or ""
+			Window.TitleBar.SubTitle.Text = Creator.MiniMessage(Value or "")
 			Window.TitleBar.SubTitle.Visible = Window.SubTitleShown ~= false and (Value or "") ~= ""
 		end
 
@@ -22275,21 +23180,25 @@ ElementsTable.Colorpicker = (function()
 			end
 			local Session = MakeSession()
 			Dialog.Title.Text = Colorpicker.Title
-			Dialog.Root.Size = UDim2.fromOffset(440, 382)
-
 			local WithAlpha = Session.WithAlpha
-			local MapX, MapY, MapSize = 30, 128, 166
+			local PanelY = 52
+			local MapX, MapY, MapSize = 30, PanelY + 12, 166
 			local HueX = MapX + MapSize + 12
 			local AlphaX = HueX + 20
 			local RightX = WithAlpha and 252 or 226
 			local RightW = 410 - RightX
+			local PreviewY = MapY + MapSize + 8
+			local PreviewH = 36
+			local CaptionY = PreviewY + PreviewH + 4
+			local PreviewW = math.floor((MapSize - 8) / 2)
+			local PanelEnd = CaptionY + 14 + 12
+			Dialog.Root.Size = UDim2.fromOffset(440, PanelEnd + 78)
 
-			MakeCaption(Dialog, "CURRENT", 20, 52, 120)
-			MakeCaption(Dialog, "NEW", 226, 52, 120)
-			MakePreview(Dialog, Session, 20, 68, 194, 36, 10, true)
-			MakePreview(Dialog, Session, 226, 68, 194, 36, 10)
-
-			MakePanel(Dialog, 20, 118, 400, 186)
+			MakePanel(Dialog, 20, PanelY, 400, PanelEnd - PanelY)
+			MakeCaption(Dialog, "CURRENT", MapX, CaptionY, PreviewW)
+			MakeCaption(Dialog, "NEW", MapX + PreviewW + 8, CaptionY, PreviewW)
+			MakePreview(Dialog, Session, MapX, PreviewY, PreviewW, PreviewH, 10, true)
+			MakePreview(Dialog, Session, MapX + PreviewW + 8, PreviewY, PreviewW, PreviewH, 10)
 			MakeMap(Dialog, Session, MapX, MapY, MapSize, MapSize, 8)
 			MakeSlider(Dialog, Session, "Hue", HueX, MapY, 12, MapSize, true)
 			if WithAlpha then
@@ -22309,7 +23218,7 @@ ElementsTable.Colorpicker = (function()
 				Session:Refresh()
 			end
 
-			HexBox = MakeLabeledBox(Dialog, "HEX", RightX, 128, RightW, function()
+			HexBox = MakeLabeledBox(Dialog, "HEX", RightX, MapY, RightW, function()
 				local Ok, Result = pcall(Color3.fromHex, HexBox.Input.Text)
 				if Ok and typeof(Result) == "Color3" then
 					Session:SetColor(Result)
@@ -22317,12 +23226,12 @@ ElementsTable.Colorpicker = (function()
 				end
 				Session:Refresh()
 			end)
-			RedBox = MakeLabeledBox(Dialog, "RED", RightX, 180, Cell, CommitRgb)
-			GreenBox = MakeLabeledBox(Dialog, "GREEN", RightX + Cell + Gap, 180, Cell, CommitRgb)
-			BlueBox = MakeLabeledBox(Dialog, "BLUE", RightX + (Cell + Gap) * 2, 180, Cell, CommitRgb)
+			RedBox = MakeLabeledBox(Dialog, "RED", RightX, MapY + 52, Cell, CommitRgb)
+			GreenBox = MakeLabeledBox(Dialog, "GREEN", RightX + Cell + Gap, MapY + 52, Cell, CommitRgb)
+			BlueBox = MakeLabeledBox(Dialog, "BLUE", RightX + (Cell + Gap) * 2, MapY + 52, Cell, CommitRgb)
 
 			if WithAlpha then
-				OpacityBox = MakeLabeledBox(Dialog, "OPACITY", RightX, 232, RightW, function()
+				OpacityBox = MakeLabeledBox(Dialog, "OPACITY", RightX, MapY + 104, RightW, function()
 					local Value = tonumber((OpacityBox.Input.Text:gsub("%%", "")))
 					if Value then
 						Session:Set(nil, nil, nil, 1 - math.clamp(Value, 0, 100) / 100)
@@ -22547,6 +23456,1132 @@ ElementsTable.Colorpicker = (function()
 
 		Library.Options[Idx] = Colorpicker
 		return Colorpicker
+	end
+
+	return Element
+end)()
+
+ElementsTable.GradientPicker = (function()
+	local Element = {}
+	Element.__index = Element
+	Element.__type = "GradientPicker"
+	Element.ClassType = "Dialog"
+
+	local Checker = PickerKit.Checker
+	local MakeCaption = PickerKit.MakeCaption
+	local MakePanel = PickerKit.MakePanel
+	local MakeKnob = PickerKit.MakeKnob
+	local MakeAction = PickerKit.MakeAction
+	local MakeMap = PickerKit.MakeMap
+	local MakeSlider = PickerKit.MakeSlider
+	local MakeFields = PickerKit.MakeFields
+	local MakeLabeledBox = PickerKit.MakeLabeledBox
+	local DialogOptions = PickerKit.DialogOptions
+
+	local Epsilon = 0.001
+	local HardLimit = 20
+	local PickRadius = 10
+
+	local function MakeStop(Time: number, Color: Color3, Alpha: number?)
+		local Hue, Sat, Vib = Color3.toHSV(Color)
+		return { Time = Time, Color = Color, Hue = Hue, Sat = Sat, Vib = Vib, Alpha = Alpha or 0, Order = 0 }
+	end
+
+	local function BuildStops(Value: any, Transparency: any, Limit: number)
+		local Sequence = Creator.ToColorSequence(Value)
+			or ColorSequence.new(Color3.new(1, 1, 1), Color3.new(0, 0, 0))
+		local AlphaSequence = if typeof(Transparency) == "NumberSequence" then Transparency else nil
+
+		local Stops = {}
+		for _, Keypoint in Sequence.Keypoints do
+			local Alpha = if AlphaSequence then Creator.SampleNumberSequence(AlphaSequence, Keypoint.Time) else 0
+			table.insert(Stops, MakeStop(Keypoint.Time, Keypoint.Value, Alpha))
+		end
+
+		if AlphaSequence then
+			for _, Keypoint in AlphaSequence.Keypoints do
+				if #Stops >= Limit then
+					break
+				end
+				local Exists = false
+				for _, Stop in Stops do
+					if math.abs(Stop.Time - Keypoint.Time) < Epsilon then
+						Exists = true
+						break
+					end
+				end
+				if not Exists then
+					table.insert(
+						Stops,
+						MakeStop(Keypoint.Time, Creator.SampleColorSequence(Sequence, Keypoint.Time), Keypoint.Value)
+					)
+				end
+			end
+		end
+
+		return Stops
+	end
+
+	local function SortStops(Stops)
+		for Index, Stop in Stops do
+			Stop.Order = Index
+		end
+		table.sort(Stops, function(A, B)
+			if A.Time ~= B.Time then
+				return A.Time < B.Time
+			end
+			return A.Order < B.Order
+		end)
+		Stops[1].Time = 0
+		Stops[#Stops].Time = 1
+	end
+
+	local function Percent(Value: number): string
+		return tostring(math.floor(Value * 1000 + 0.5) / 10) .. "%"
+	end
+
+	local function MakeBarPreview(Dialog, Picker, X, Y, W, H, Radius, Frozen)
+		local Back = Checker(Dialog.Root, UDim2.fromOffset(W, H), Radius)
+		Back.Position = UDim2.fromOffset(X, Y)
+		local Gradient = New("UIGradient", {})
+		New("Frame", {
+			Size = UDim2.fromScale(1, 1),
+			BackgroundColor3 = Color3.new(1, 1, 1),
+			Parent = Back,
+		}, {
+			Corner(Radius),
+			Stroke("PickerBorder", 0.5),
+			Gradient,
+		})
+
+		local function Paint()
+			Gradient.Color = Picker.Value
+			Gradient.Transparency = Picker.TransparencyValue
+			Gradient.Rotation = Picker.Rotation
+		end
+
+		if Frozen then
+			Paint()
+			return Back, nil
+		end
+		return Back, Paint
+	end
+
+	local function MakeStopBar(Dialog, Session, Picker, X, Y, W, H, Radius)
+		local Back = Checker(Dialog.Root, UDim2.fromOffset(W, H), Radius)
+		Back.Position = UDim2.fromOffset(X, Y)
+
+		local Gradient = New("UIGradient", {})
+		New("Frame", {
+			Size = UDim2.fromScale(1, 1),
+			BackgroundColor3 = Color3.new(1, 1, 1),
+			Parent = Back,
+		}, {
+			Corner(Radius),
+			Stroke("PickerBorder", 0.5),
+			Gradient,
+		})
+
+		local Lane = New("Frame", {
+			Size = UDim2.fromOffset(W, 22),
+			Position = UDim2.fromOffset(X, Y + H + 4),
+			BackgroundTransparency = 1,
+			Parent = Dialog.Root,
+		})
+
+		local Track = New("Frame", {
+			Size = UDim2.fromOffset(W, H + 26),
+			Position = UDim2.fromOffset(X, Y),
+			BackgroundTransparency = 1,
+			ZIndex = 2,
+			Parent = Dialog.Root,
+		})
+
+		local Handles = {}
+		local Dragging
+
+		Creator.BindDrag(Track, function(Sx)
+			if not Dragging then
+				local Nearest, Distance = nil, math.huge
+				for _, Stop in Picker.Stops do
+					local Gap = math.abs(Stop.Time - Sx) * W
+					if Gap < Distance then
+						Nearest, Distance = Stop, Gap
+					end
+				end
+				if Distance <= PickRadius then
+					Dragging = Nearest
+					Session:Select(Nearest)
+				else
+					Dragging = Session:Insert(Sx) or Nearest
+					if Dragging then
+						Session:Select(Dragging)
+					end
+				end
+			end
+			if Dragging then
+				Session:Move(Dragging, Sx)
+			end
+		end, function()
+			Dragging = nil
+		end)
+
+		Session:Bind(function()
+			Gradient.Color = Picker.Value
+			Gradient.Transparency = Picker.TransparencyValue
+
+			local Present = {}
+			for _, Stop in Picker.Stops do
+				Present[Stop] = true
+				local Handle = Handles[Stop]
+				if not Handle then
+					Handle = MakeKnob(14)
+					Handle.Parent = Lane
+					Handles[Stop] = Handle
+				end
+				Handle.Position = UDim2.new(Stop.Time, 0, 0.5, 0)
+				Handle.BackgroundColor3 = Stop.Color
+				local Outline = Handle:FindFirstChildOfClass("UIStroke")
+				if Outline then
+					Outline.Thickness = if Stop == Session.Selected then 4 else 2.5
+				end
+				Handle.ZIndex = if Stop == Session.Selected then 9 else 7
+			end
+			for Stop, Handle in next, Handles do
+				if not Present[Stop] then
+					Handle:Destroy()
+					Handles[Stop] = nil
+				end
+			end
+		end)
+
+		return Back
+	end
+
+	local function MakeStopActions(Dialog, Session, X, Y, W, H)
+		local Gap = 8
+		local Cell = math.floor((W - Gap * 2) / 3)
+		MakeAction(Dialog, "Add stop", X, Y, Cell, H, 9, function()
+			Session:AddAuto()
+		end)
+		MakeAction(Dialog, "Remove", X + Cell + Gap, Y, Cell, H, 9, function()
+			Session:Remove()
+		end)
+		MakeAction(Dialog, "Reverse", X + (Cell + Gap) * 2, Y, W - (Cell + Gap) * 2, H, 9, function()
+			Session:Reverse()
+		end)
+	end
+
+	local function MakePosition(Dialog, Session, Picker, X, Y, W)
+		local Box
+		Box = MakeLabeledBox(Dialog, "POSITION", X, Y, W, function()
+			local Value = tonumber((string.gsub(Box.Input.Text, "%%", "")))
+			if Value then
+				Session:Move(Session.Selected, math.clamp(Value, 0, 100) / 100)
+				return
+			end
+			Session:Refresh()
+		end)
+		Session:Bind(function()
+			Box.Input.Text = Percent(Session.Selected.Time)
+		end)
+		return Box
+	end
+
+	local function MakeAngle(Dialog, Session, Picker, X, Y, W)
+		MakeCaption(Dialog, "ANGLE", X, Y, W)
+
+		local Tile = Checker(Dialog.Root, UDim2.fromOffset(28, 28), 8)
+		Tile.Position = UDim2.fromOffset(X, Y + 14)
+		local TileGradient = New("UIGradient", {})
+		New("Frame", {
+			Size = UDim2.fromScale(1, 1),
+			BackgroundColor3 = Color3.new(1, 1, 1),
+			Parent = Tile,
+		}, {
+			Corner(8),
+			Stroke("PickerBorder", 0.5),
+			TileGradient,
+		})
+
+		local Box = Components.Textbox(Dialog.Root, "Standard")
+		Box.Frame.Size = UDim2.fromOffset(64, 28)
+		Box.Frame.Position = UDim2.fromOffset(X + W - 64, Y + 14)
+		Creator.AddSignal(Box.Input.FocusLost, function()
+			local Value = tonumber((string.gsub(Box.Input.Text, "[^%d%.%-]", "")))
+			if Value then
+				Session:SetRotation(Value)
+				return
+			end
+			Session:Refresh()
+		end)
+
+		local BarX = X + 38
+		local BarW = W - 38 - 74
+		local Track = New("Frame", {
+			Size = UDim2.fromOffset(BarW, 22),
+			Position = UDim2.fromOffset(BarX, Y + 17),
+			BackgroundTransparency = 1,
+			Parent = Dialog.Root,
+		})
+		local Rail = New("Frame", {
+			Size = UDim2.new(1, 0, 0, 8),
+			AnchorPoint = Vector2.new(0, 0.5),
+			Position = UDim2.fromScale(0, 0.5),
+			BackgroundColor3 = Color3.new(1, 1, 1),
+			BackgroundTransparency = 0.85,
+			Parent = Track,
+		}, {
+			Corner(999),
+			Stroke("PickerBorder", 0.6),
+		})
+		local Fill = New("Frame", {
+			Size = UDim2.fromScale(0, 1),
+			Parent = Rail,
+			ThemeTag = {
+				BackgroundColor3 = "Accent",
+			},
+		}, {
+			Corner(999),
+		})
+		local Thumb = MakeKnob(14)
+		Thumb.Parent = Rail
+
+		Creator.BindDrag(Track, function(Sx)
+			Session:SetRotation(math.floor(Sx * 360 + 0.5))
+		end)
+
+		Session:Bind(function()
+			local Turn = math.clamp(Picker.Rotation, 0, 360) / 360
+			Fill.Size = UDim2.fromScale(Turn, 1)
+			Thumb.Position = UDim2.fromScale(Turn, 0.5)
+			Thumb.BackgroundColor3 = Session:Current()
+			Box.Input.Text = tostring(math.floor(Picker.Rotation + 0.5)) .. "°"
+			TileGradient.Color = Picker.Value
+			TileGradient.Transparency = Picker.TransparencyValue
+			TileGradient.Rotation = Picker.Rotation
+		end)
+	end
+
+	function Element:New(Idx, Config)
+		local Library = self.Library
+		assert(Config.Title, "GradientPicker - Missing Title")
+		assert(Config.Default, "GradientPicker - Missing default value.")
+
+		local Variant = Config.Variant or "Field"
+		if Variant == "Hex" then
+			Variant = "Stops"
+		end
+
+		local Limit = math.clamp(Config.MaxStops or HardLimit, 2, HardLimit)
+
+		local GradientPicker = {
+			Type = "GradientPicker",
+			Variant = Variant,
+			Title = type(Config.Title) == "string" and Config.Title or "GradientPicker",
+			WithAlpha = Config.Transparency ~= nil and Config.Transparency ~= false,
+			ShowRotation = Config.ShowRotation ~= false,
+			Rotation = Config.Rotation or 0,
+			Limit = Limit,
+			Callback = Config.Callback or function(Sequence, Transparency, Rotation) end,
+			Stops = BuildStops(Config.Default, Config.Transparency, Limit),
+			Fills = {},
+		}
+
+		local Row = MakeRow(self, Config, true)
+		Bind(GradientPicker, Row)
+
+		local Swatch = New("Frame", {
+			Size = UDim2.fromScale(1, 1),
+			BackgroundColor3 = Color3.new(1, 1, 1),
+		}, {
+			Corner(Variant == "Bar" and 999 or (Variant == "Stops" and 5 or 8)),
+		})
+		local SwatchGradient = New("UIGradient", { Parent = Swatch })
+		table.insert(GradientPicker.Fills, { Gradient = SwatchGradient, Rotates = Variant ~= "Bar" })
+
+		local SummaryLabel
+		local Control
+		local ActiveDialog
+		local SyncMirror
+
+		if Variant == "Swatch" then
+			Control = Checker(nil, UDim2.fromOffset(28, 28), 8)
+			Swatch.Parent = Control
+			New("UIStroke", {
+				ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+				Transparency = 0.8,
+				Color = Color3.new(0, 0, 0),
+				Parent = Control,
+			})
+		elseif Variant == "Field" then
+			Control = New("Frame", {
+				Size = UDim2.fromOffset(176, 30),
+				BackgroundTransparency = 1,
+			}, {
+				New("UIListLayout", {
+					FillDirection = Enum.FillDirection.Horizontal,
+					VerticalAlignment = Enum.VerticalAlignment.Center,
+					SortOrder = Enum.SortOrder.LayoutOrder,
+					Padding = UDim.new(0, 8),
+				}),
+			})
+			local Box = Checker(Control, UDim2.fromOffset(30, 30), 9)
+			Box.LayoutOrder = 1
+			Swatch.Parent = Box
+			New("UIStroke", {
+				ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+				Transparency = 0.7,
+				Thickness = 1.5,
+				ThemeTag = {
+					Color = "ElementBorder",
+				},
+				Parent = Box,
+			})
+			SummaryLabel = Label({
+				Text = "",
+				TextSize = 12,
+				Weight = "Medium",
+				Tag = "TextSecondary",
+				Size = UDim2.fromScale(1, 1),
+				TextTruncate = Enum.TextTruncate.AtEnd,
+			})
+			SummaryLabel.FontFace = Fonts.Mono
+			New("Frame", {
+				Size = UDim2.fromOffset(138, 30),
+				LayoutOrder = 2,
+				BackgroundTransparency = 0.9,
+				Parent = Control,
+				ThemeTag = {
+					BackgroundColor3 = "Input",
+				},
+			}, {
+				Corner(9),
+				New("UIPadding", {
+					PaddingLeft = UDim.new(0, 10),
+					PaddingRight = UDim.new(0, 8),
+				}),
+				New("UIStroke", {
+					ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+					Transparency = 0.82,
+					ThemeTag = {
+						Color = "ElementBorder",
+					},
+				}),
+				SummaryLabel,
+			})
+		elseif Variant == "Bar" then
+			Control = Checker(nil, UDim2.fromOffset(84, 12), 999)
+			Swatch.Parent = Control
+		elseif Variant == "Stops" then
+			SummaryLabel = Label({
+				Text = "",
+				TextSize = 11.5,
+				Weight = "Medium",
+				Tag = "TextSecondary",
+				AutomaticSize = Enum.AutomaticSize.X,
+				Size = UDim2.new(0, 0, 1, 0),
+				LayoutOrder = 2,
+			})
+			SummaryLabel.FontFace = Fonts.Mono
+			local Mini = Checker(nil, UDim2.fromOffset(46, 16), 5)
+			Mini.LayoutOrder = 1
+			Swatch.Parent = Mini
+			Control = New("Frame", {
+				Size = UDim2.fromOffset(0, 30),
+				AutomaticSize = Enum.AutomaticSize.X,
+				BackgroundTransparency = 0.93,
+				ThemeTag = {
+					BackgroundColor3 = "Input",
+				},
+			}, {
+				Corner(9),
+				New("UIPadding", {
+					PaddingLeft = UDim.new(0, 7),
+					PaddingRight = UDim.new(0, 10),
+				}),
+				New("UIListLayout", {
+					FillDirection = Enum.FillDirection.Horizontal,
+					VerticalAlignment = Enum.VerticalAlignment.Center,
+					SortOrder = Enum.SortOrder.LayoutOrder,
+					Padding = UDim.new(0, 8),
+				}),
+				Mini,
+				SummaryLabel,
+			})
+		else
+			Library:Alert("GradientPicker - Unknown Variant '" .. tostring(Variant) .. "'", "Error")
+			return nil
+		end
+
+		Place(Control, Row)
+
+		local function MakeSession()
+			local Picker = GradientPicker
+			local First = Picker.Stops[1]
+			local Session = {
+				Hue = First.Hue,
+				Sat = First.Sat,
+				Vib = First.Vib,
+				Alpha = First.Alpha,
+				Original = First.Color,
+				OriginalAlpha = First.Alpha,
+				WithAlpha = Picker.WithAlpha,
+				Live = true,
+				Views = {},
+				Selected = First,
+				Snapshot = Picker:Snapshot(),
+			}
+
+			function Session:Current()
+				return Color3.fromHSV(self.Hue, self.Sat, self.Vib)
+			end
+
+			function Session:Bind(Callback)
+				table.insert(self.Views, Callback)
+			end
+
+			function Session:Refresh()
+				for _, View in next, self.Views do
+					View()
+				end
+			end
+
+			function Session:Select(Stop)
+				self.Selected = Stop
+				self.Hue, self.Sat, self.Vib, self.Alpha = Stop.Hue, Stop.Sat, Stop.Vib, Stop.Alpha
+				self:Refresh()
+			end
+
+			function Session:Set(Hue, Sat, Vib, Alpha)
+				self.Hue = Hue or self.Hue
+				self.Sat = Sat or self.Sat
+				self.Vib = Vib or self.Vib
+				self.Alpha = if Picker.WithAlpha then (Alpha or self.Alpha) else 0
+				local Stop = self.Selected
+				Stop.Hue, Stop.Sat, Stop.Vib, Stop.Alpha = self.Hue, self.Sat, self.Vib, self.Alpha
+				Stop.Color = Color3.fromHSV(self.Hue, self.Sat, self.Vib)
+				Picker:Display()
+				self:Refresh()
+			end
+
+			function Session:SetColor(Color, Alpha)
+				local Hue, Sat, Vib = Color3.toHSV(Color)
+				self:Set(Hue, Sat, Vib, Alpha)
+			end
+
+			function Session:Move(Stop, Time)
+				local Stops = Picker.Stops
+				if Stop ~= Stops[1] and Stop ~= Stops[#Stops] then
+					Stop.Time = math.clamp(Time, Epsilon, 1 - Epsilon)
+					Picker:Display()
+				end
+				self:Refresh()
+			end
+
+			function Session:Insert(Time)
+				if #Picker.Stops >= Picker.Limit then
+					return nil
+				end
+				local Stop = MakeStop(
+					math.clamp(Time, Epsilon, 1 - Epsilon),
+					Creator.SampleColorSequence(Picker.Value, Time),
+					Creator.SampleNumberSequence(Picker.TransparencyValue, Time)
+				)
+				table.insert(Picker.Stops, Stop)
+				Picker:Display()
+				return Stop
+			end
+
+			function Session:AddAuto()
+				local Stops = Picker.Stops
+				local Best, Time = 0, 0.5
+				for Index = 1, #Stops - 1 do
+					local Gap = Stops[Index + 1].Time - Stops[Index].Time
+					if Gap > Best then
+						Best = Gap
+						Time = Stops[Index].Time + Gap / 2
+					end
+				end
+				local Stop = self:Insert(Time)
+				if Stop then
+					self:Select(Stop)
+				end
+			end
+
+			function Session:Remove(Stop)
+				Stop = Stop or self.Selected
+				local Stops = Picker.Stops
+				local Index = table.find(Stops, Stop)
+				if not Index or #Stops <= 2 or Index == 1 or Index == #Stops then
+					return
+				end
+				table.remove(Stops, Index)
+				Picker:Display()
+				self:Select(Stops[math.clamp(Index - 1, 1, #Stops)])
+			end
+
+			function Session:Reverse()
+				local Stops = Picker.Stops
+				local Flipped = {}
+				for Index = #Stops, 1, -1 do
+					local Stop = Stops[Index]
+					Stop.Time = 1 - Stop.Time
+					table.insert(Flipped, Stop)
+				end
+				Picker.Stops = Flipped
+				Picker:Display()
+				self:Refresh()
+			end
+
+			function Session:SetRotation(Value)
+				Picker.Rotation = math.clamp(Value, 0, 360)
+				Picker:Display()
+				self:Refresh()
+			end
+
+			return Session
+		end
+
+		local function Finish(Dialog, Session)
+			ActiveDialog = Dialog
+			Dialog:Button("Done", function() end)
+			Dialog:Button("Cancel", function()
+				GradientPicker:Restore(Session.Snapshot)
+			end)
+			Dialog:Open()
+			SyncMirror()
+		end
+
+		local function CommonTop(Dialog, Session, X, Y, W, BarH)
+			MakeStopBar(Dialog, Session, GradientPicker, X, Y, W, BarH, 8)
+			MakeStopActions(Dialog, Session, X, Y + BarH + 30, W, 28)
+		end
+
+		local function OpenChromium()
+			local Dialog = Components.Dialog:Create({ Tags = DialogOptions.Tags, Anchor = Swatch, DoNotBlur = Config.DoNotBlur })
+			if Dialog.Ghost then
+				return
+			end
+			local Session = MakeSession()
+			Dialog.Title.Text = GradientPicker.Title
+
+			local Width = 360
+			local InnerW = Width - 40
+			local BarH = 26
+			local MapY = 56
+			local MapH = 130
+			local SlidersY = MapY + MapH + 16
+			local RowH = 34
+			local PanelAEnd = SlidersY + RowH + 10
+			local PanelBY = PanelAEnd + 8
+			local BarY = PanelBY + 12
+			local ActionsY = BarY + BarH + 30
+			local MetaY = ActionsY + 28 + 12
+			local FieldsY = MetaY + 42 + 12
+			local PanelEnd = FieldsY + 46 + 10
+			Dialog.Root.Size = UDim2.fromOffset(Width, PanelEnd + 72)
+
+			MakePanel(Dialog, 12, MapY - 8, Width - 24, PanelAEnd - (MapY - 8))
+			MakePanel(Dialog, 12, PanelBY, Width - 24, PanelEnd - PanelBY)
+			CommonTop(Dialog, Session, 20, BarY, InnerW, BarH)
+			MakeMap(Dialog, Session, 20, MapY, InnerW, MapH, 8)
+
+			local Preview = Checker(Dialog.Root, UDim2.fromOffset(RowH, RowH), 999)
+			Preview.Position = UDim2.fromOffset(20, SlidersY)
+			local PreviewFill = New("Frame", {
+				Size = UDim2.fromScale(1, 1),
+				Parent = Preview,
+			}, {
+				Corner(999),
+				Stroke("PickerBorder", 0.5),
+			})
+			Session:Bind(function()
+				PreviewFill.BackgroundColor3 = Session:Current()
+				PreviewFill.BackgroundTransparency = Session.Alpha
+			end)
+
+			local BarX = 20 + RowH + 14
+			local BarW = Width - 20 - BarX - 8
+			local BarsH = Session.WithAlpha and 28 or 10
+			local HueY = SlidersY + math.floor((RowH - BarsH) / 2)
+			MakeSlider(Dialog, Session, "Hue", BarX, HueY, BarW, 10, false)
+			if Session.WithAlpha then
+				MakeSlider(Dialog, Session, "Alpha", BarX, HueY + 18, BarW, 10, false)
+			end
+
+			local FieldX = 20 + 58 + 8
+			local Fields = MakeFields(Dialog, Session, FieldX, FieldsY, Width - 20 - FieldX, "Hex")
+			local Modes = { "Hex", "RGB", "HSL" }
+			local ModeIndex = 1
+			local ModeButton
+			ModeButton = MakeAction(Dialog, "HEX", 20, FieldsY, 58, 30, 9, function()
+				ModeIndex = ModeIndex % #Modes + 1
+				Fields:SetMode(Modes[ModeIndex])
+				ModeButton:SetText(string.upper(Modes[ModeIndex]))
+			end)
+
+			if GradientPicker.ShowRotation then
+				MakePosition(Dialog, Session, GradientPicker, 20, MetaY, 96)
+				MakeAngle(Dialog, Session, GradientPicker, 130, MetaY, InnerW - 110)
+			else
+				MakePosition(Dialog, Session, GradientPicker, 20, MetaY, InnerW)
+			end
+
+			Session:Refresh()
+			Finish(Dialog, Session)
+		end
+
+		local function MakeInputRow(Dialog, Title, X, Y, W, Commit)
+			local Box = Components.Textbox(Dialog.Root, "Standard")
+			Box.Frame.Size = UDim2.fromOffset(W, 28)
+			Box.Frame.Position = UDim2.fromOffset(X, Y)
+			Box.Container.Position = UDim2.fromOffset(4, 0)
+			Box.Container.Size = UDim2.new(1, -56, 1, 0)
+			Label({
+				Text = Title,
+				TextSize = 10.5,
+				Weight = "Medium",
+				Tag = "SubText",
+				Size = UDim2.fromOffset(48, 28),
+				AnchorPoint = Vector2.new(1, 0),
+				Position = UDim2.new(1, -8, 0, 0),
+				TextXAlignment = Enum.TextXAlignment.Right,
+				ZIndex = Box.Frame.ZIndex + 2,
+				Parent = Box.Frame,
+			})
+			Creator.AddSignal(Box.Input.FocusLost, Commit)
+			return Box
+		end
+
+		local function OpenFluent()
+			local Dialog = Components.Dialog:Create({ Tags = DialogOptions.Tags, Anchor = Swatch, DoNotBlur = Config.DoNotBlur })
+			if Dialog.Ghost then
+				return
+			end
+			local Session = MakeSession()
+			Dialog.Title.Text = GradientPicker.Title
+
+			local WithAlpha = Session.WithAlpha
+			local Width = 420
+			local InnerW = Width - 48
+			local MapSize = 164
+			local MapX, MapY, MapW, MapH = 24, 64, MapSize, MapSize
+			local HueX = MapX + MapW + 12
+			local AlphaX = HueX + 20
+			local InputX = (WithAlpha and AlphaX + 12 or HueX + 12) + 16
+			local InputW = Width - 24 - InputX
+			local PreviewY = MapY + MapH + 8
+			local PanelAEnd = PreviewY + 26 + 4 + 14 + 12
+			local PanelGY = PanelAEnd + 8
+			local BarH = 24
+			local BarY = PanelGY + 14
+			local ActionsY = BarY + BarH + 30
+			local MetaY = ActionsY + 28 + 12
+			local PanelGEnd = MetaY + 42 + 10
+			Dialog.Root.Size = UDim2.fromOffset(Width, PanelGEnd + 78)
+
+			MakePanel(Dialog, 12, MapY - 12, Width - 24, PanelAEnd - (MapY - 12))
+			MakeMap(Dialog, Session, MapX, MapY, MapW, MapH, 10)
+			MakeSlider(Dialog, Session, "Hue", HueX, MapY, 12, MapH, true)
+			if WithAlpha then
+				MakeSlider(Dialog, Session, "Alpha", AlphaX, MapY, 12, MapH, true)
+			end
+
+			local Rows = if WithAlpha then 5 else 4
+			local RowGap = math.floor((MapH - Rows * 28) / (Rows - 1))
+			local function RowY(Index)
+				return MapY + (Index - 1) * (28 + RowGap)
+			end
+
+			local HexBox, RedBox, GreenBox, BlueBox, AlphaBox
+
+			local function CommitRgb()
+				local R, G, B = tonumber(RedBox.Input.Text), tonumber(GreenBox.Input.Text), tonumber(BlueBox.Input.Text)
+				if R and G and B then
+					Session:SetColor(Color3.fromRGB(math.clamp(R, 0, 255), math.clamp(G, 0, 255), math.clamp(B, 0, 255)))
+					return
+				end
+				Session:Refresh()
+			end
+
+			HexBox = MakeInputRow(Dialog, "HEX", InputX, RowY(1), InputW, function()
+				local Ok, Result = pcall(Color3.fromHex, HexBox.Input.Text)
+				if Ok and typeof(Result) == "Color3" then
+					Session:SetColor(Result)
+					return
+				end
+				Session:Refresh()
+			end)
+			RedBox = MakeInputRow(Dialog, "RED", InputX, RowY(2), InputW, CommitRgb)
+			GreenBox = MakeInputRow(Dialog, "GREEN", InputX, RowY(3), InputW, CommitRgb)
+			BlueBox = MakeInputRow(Dialog, "BLUE", InputX, RowY(4), InputW, CommitRgb)
+			if WithAlpha then
+				AlphaBox = MakeInputRow(Dialog, "ALPHA", InputX, RowY(5), InputW, function()
+					local Value = tonumber((string.gsub(AlphaBox.Input.Text, "%%", "")))
+					if Value then
+						Session:Set(nil, nil, nil, 1 - math.clamp(Value, 0, 100) / 100)
+						return
+					end
+					Session:Refresh()
+				end)
+			end
+
+			Session:Bind(function()
+				local Color = Session:Current()
+				HexBox.Input.Text = "#" .. Color:ToHex():upper()
+				RedBox.Input.Text = tostring(math.floor(Color.R * 255 + 0.5))
+				GreenBox.Input.Text = tostring(math.floor(Color.G * 255 + 0.5))
+				BlueBox.Input.Text = tostring(math.floor(Color.B * 255 + 0.5))
+				if AlphaBox then
+					AlphaBox.Input.Text = tostring(math.floor((1 - Session.Alpha) * 100 + 0.5)) .. "%"
+				end
+			end)
+
+			local PreviewW = math.floor((MapW - 8) / 2)
+			MakeCaption(Dialog, "CURRENT", MapX, PreviewY + 26 + 4, PreviewW)
+			MakeCaption(Dialog, "NEW", MapX + PreviewW + 8, PreviewY + 26 + 4, PreviewW)
+			local Frozen = {
+				Value = Session.Snapshot.Value,
+				TransparencyValue = Session.Snapshot.TransparencyValue,
+				Rotation = Session.Snapshot.Rotation,
+			}
+			MakeBarPreview(Dialog, Frozen, MapX, PreviewY, PreviewW, 26, 9, true)
+			local _, Repaint = MakeBarPreview(Dialog, GradientPicker, MapX + PreviewW + 8, PreviewY, PreviewW, 26, 9, false)
+			Session:Bind(Repaint)
+
+			MakePanel(Dialog, 12, PanelGY, Width - 24, PanelGEnd - PanelGY)
+			MakeStopBar(Dialog, Session, GradientPicker, MapX, BarY, InnerW, BarH, 8)
+			MakeStopActions(Dialog, Session, MapX, ActionsY, InnerW, 28)
+
+			if GradientPicker.ShowRotation then
+				MakePosition(Dialog, Session, GradientPicker, MapX, MetaY, 110)
+				MakeAngle(Dialog, Session, GradientPicker, MapX + 124, MetaY, InnerW - 124)
+			else
+				MakePosition(Dialog, Session, GradientPicker, MapX, MetaY, InnerW)
+			end
+
+			Session:Refresh()
+			Finish(Dialog, Session)
+		end
+
+		local function OpenWheel()
+			local Dialog = Components.Dialog:Create({ Tags = DialogOptions.Tags, Anchor = Swatch, DoNotBlur = Config.DoNotBlur })
+			if Dialog.Ghost then
+				return
+			end
+			local Session = MakeSession()
+			local Width = 340
+			local InnerW = Width - 40
+			Dialog.Title.Text = GradientPicker.Title
+
+			local BarH = 22
+
+			local RingSize = 180
+			local RingRadius = 80
+			local RingThickness = 16
+			local RingX = math.floor((Width - RingSize) / 2)
+			local RingY = 56
+			local Center = RingSize / 2
+
+			local NextY = RingY + RingSize + 14
+			if Session.WithAlpha then
+				NextY += 10 + 14
+			end
+			local BarY = NextY
+			local ActionsY = BarY + BarH + 30
+			local MetaY = ActionsY + 28 + 12
+			local FieldsY = MetaY + 42 + 12
+			local PanelEnd = FieldsY + 46 + 10
+
+			MakePanel(Dialog, 12, RingY - 8, Width - 24, PanelEnd - (RingY - 8))
+			CommonTop(Dialog, Session, 20, BarY, InnerW, BarH)
+
+			local Ring = New("ImageLabel", {
+				Size = UDim2.fromOffset(RingSize, RingSize),
+				Position = UDim2.fromOffset(RingX, RingY),
+				BackgroundTransparency = 1,
+				Image = "rbxassetid://81989409322735",
+				ImageColor3 = Color3.new(1, 1, 1),
+				ImageTransparency = 0,
+				ScaleType = Enum.ScaleType.Stretch,
+				Parent = Dialog.Root,
+			})
+
+			for _, Radius in ipairs({ RingRadius + RingThickness / 2 - 1, RingRadius - RingThickness / 2 }) do
+				New("Frame", {
+					Size = UDim2.fromOffset(Radius * 2, Radius * 2),
+					AnchorPoint = Vector2.new(0.5, 0.5),
+					Position = UDim2.fromOffset(RingX + Center, RingY + Center),
+					BackgroundTransparency = 1,
+					ZIndex = 3,
+					Parent = Dialog.Root,
+				}, {
+					Corner(Radius),
+					Stroke("PickerBorder", 0.4, 2),
+				})
+			end
+
+			local MapSize = 92
+			MakeMap(Dialog, Session, RingX + Center - MapSize / 2, RingY + Center - MapSize / 2, MapSize, MapSize, 10)
+
+			local Thumb = MakeKnob(18)
+			Thumb.Parent = Dialog.Root
+
+			Creator.BindDrag(Ring, function(Sx, Sy)
+				local Dx = Sx - 0.5
+				local Dy = Sy - 0.5
+				local Inner = (RingRadius - RingThickness / 2) / RingSize
+				if Dx * Dx + Dy * Dy < Inner * Inner then
+					return
+				end
+				local Turn = (math.atan2(Dx, -Dy) / (math.pi * 2)) % 1
+				Session:Set(math.clamp(Turn, 0, 0.999))
+			end)
+
+			Session:Bind(function()
+				local Angle = Session.Hue * math.pi * 2
+				Thumb.Position = UDim2.fromOffset(
+					RingX + Center + RingRadius * math.sin(Angle),
+					RingY + Center - RingRadius * math.cos(Angle)
+				)
+				Thumb.BackgroundColor3 = Color3.fromHSV(Session.Hue, 1, 1)
+			end)
+
+			if Session.WithAlpha then
+				MakeSlider(Dialog, Session, "Alpha", 20, RingY + RingSize + 14, InnerW, 10, false)
+			end
+
+			MakeFields(Dialog, Session, 20, FieldsY, InnerW, "All", true)
+
+			if GradientPicker.ShowRotation then
+				MakePosition(Dialog, Session, GradientPicker, 20, MetaY, 96)
+				MakeAngle(Dialog, Session, GradientPicker, 130, MetaY, InnerW - 110)
+			else
+				MakePosition(Dialog, Session, GradientPicker, 20, MetaY, InnerW)
+			end
+
+			Dialog.Root.Size = UDim2.fromOffset(Width, PanelEnd + 12 + 58)
+			Session:Refresh()
+			Finish(Dialog, Session)
+		end
+
+		local function Open()
+			local Style = Config.PickerStyle or Library.GradientPickerStyle
+			if Style == "Fluent" then
+				OpenFluent()
+			elseif Style == "Wheel" then
+				OpenWheel()
+			else
+				OpenChromium()
+			end
+		end
+
+		local Mirror
+		local MirrorGradient
+
+		function SyncMirror()
+			local Blur = ActiveDialog and not ActiveDialog.Closing and ActiveDialog.Blur
+			local Layer = Blur and Blur.State.Layer
+			local Holder = Swatch.Parent
+			if not Layer or not Holder or not Holder:IsDescendantOf(game) then
+				return
+			end
+
+			if not Mirror or Mirror.Parent ~= Layer then
+				Mirror = Checker(Layer, UDim2.fromOffset(0, 0), 0)
+				Mirror.ZIndex = 4
+				local Fill = New("Frame", {
+					Size = UDim2.fromScale(1, 1),
+					BackgroundColor3 = Color3.new(1, 1, 1),
+					ZIndex = 4,
+					Parent = Mirror,
+				}, {
+					Corner(0),
+				})
+				MirrorGradient = New("UIGradient", { Parent = Fill })
+				local HolderCorner = Holder:FindFirstChildOfClass("UICorner")
+				local SwatchCorner = Swatch:FindFirstChildOfClass("UICorner")
+				if HolderCorner then
+					Mirror:FindFirstChildOfClass("UICorner").CornerRadius = HolderCorner.CornerRadius
+				end
+				if SwatchCorner then
+					Fill:FindFirstChildOfClass("UICorner").CornerRadius = SwatchCorner.CornerRadius
+				end
+			end
+
+			local Origin = Layer.AbsolutePosition
+			local Spot = Holder.AbsolutePosition
+			Mirror.Position = UDim2.fromOffset(Spot.X - Origin.X, Spot.Y - Origin.Y)
+			Mirror.Size = UDim2.fromOffset(Holder.AbsoluteSize.X, Holder.AbsoluteSize.Y)
+			MirrorGradient.Color = SwatchGradient.Color
+			MirrorGradient.Transparency = SwatchGradient.Transparency
+			MirrorGradient.Rotation = SwatchGradient.Rotation
+		end
+
+		function GradientPicker:Snapshot()
+			local Stops = {}
+			for _, Stop in self.Stops do
+				table.insert(Stops, { Time = Stop.Time, Color = Stop.Color, Alpha = Stop.Alpha })
+			end
+			return {
+				Stops = Stops,
+				Rotation = self.Rotation,
+				Value = self.Value,
+				TransparencyValue = self.TransparencyValue,
+			}
+		end
+
+		function GradientPicker:Restore(Snapshot)
+			local Stops = {}
+			for _, Entry in Snapshot.Stops do
+				table.insert(Stops, MakeStop(Entry.Time, Entry.Color, Entry.Alpha))
+			end
+			self.Stops = Stops
+			self.Rotation = Snapshot.Rotation
+			self:Display()
+		end
+
+		function GradientPicker:Display()
+			SortStops(self.Stops)
+
+			local ColorKeys, AlphaKeys = {}, {}
+			for _, Stop in self.Stops do
+				table.insert(ColorKeys, ColorSequenceKeypoint.new(Stop.Time, Stop.Color))
+				table.insert(AlphaKeys, NumberSequenceKeypoint.new(Stop.Time, if self.WithAlpha then Stop.Alpha else 0))
+			end
+			self.Value = ColorSequence.new(ColorKeys)
+			self.TransparencyValue = NumberSequence.new(AlphaKeys)
+
+			for _, Fill in self.Fills do
+				Fill.Gradient.Color = self.Value
+				Fill.Gradient.Transparency = self.TransparencyValue
+				Fill.Gradient.Rotation = if Fill.Rotates then self.Rotation else 0
+			end
+
+			if SummaryLabel then
+				local Count = #self.Stops
+				if Variant == "Stops" then
+					SummaryLabel.Text = tostring(Count) .. " stops"
+				elseif Count == 2 then
+					SummaryLabel.Text = "#" .. self.Stops[1].Color:ToHex():upper() .. " > #" .. self.Stops[2].Color:ToHex():upper()
+				else
+					SummaryLabel.Text = tostring(Count) .. " stops, " .. tostring(math.floor(self.Rotation + 0.5)) .. "°"
+				end
+			end
+
+			SyncMirror()
+
+			Library:SafeCallback(self.Callback, self.Value, self.TransparencyValue, self.Rotation)
+			Library:SafeCallback(self.Changed, self.Value, self.TransparencyValue, self.Rotation)
+		end
+
+		function GradientPicker:SetValue(Value, Transparency, Rotation)
+			if Transparency ~= nil and Transparency ~= false then
+				self.WithAlpha = true
+			end
+			self.Stops = BuildStops(Value, Transparency, self.Limit)
+			if Rotation ~= nil then
+				self.Rotation = math.clamp(Rotation, 0, 360)
+			end
+			self:Display()
+		end
+
+		function GradientPicker:SetRotation(Value)
+			self.Rotation = math.clamp(Value or 0, 0, 360)
+			self:Display()
+		end
+
+		function GradientPicker:GetValue()
+			return self.Value, self.TransparencyValue, self.Rotation
+		end
+
+		function GradientPicker:GetKeypoints()
+			return self.Value.Keypoints
+		end
+
+		function GradientPicker:GetColorAt(Time)
+			return Creator.SampleColorSequence(self.Value, Time)
+		end
+
+		function GradientPicker:GetTransparencyAt(Time)
+			return Creator.SampleNumberSequence(self.TransparencyValue, Time)
+		end
+
+		function GradientPicker:AddStop(Time, Color, Alpha)
+			if #self.Stops >= self.Limit then
+				return false
+			end
+			table.insert(self.Stops, MakeStop(math.clamp(Time, Epsilon, 1 - Epsilon), Color, Alpha))
+			self:Display()
+			return true
+		end
+
+		function GradientPicker:RemoveStop(Index)
+			local Stops = self.Stops
+			if #Stops <= 2 or Index <= 1 or Index >= #Stops then
+				return false
+			end
+			table.remove(Stops, Index)
+			self:Display()
+			return true
+		end
+
+		function GradientPicker:Apply(Gradient)
+			Gradient.Color = self.Value
+			Gradient.Transparency = self.TransparencyValue
+			Gradient.Rotation = self.Rotation
+		end
+
+		function GradientPicker:Serialize()
+			local Data = {}
+			for _, Stop in self.Stops do
+				table.insert(Data, {
+					Time = math.floor(Stop.Time * 10000 + 0.5) / 10000,
+					Color = Stop.Color:ToHex(),
+					Alpha = Stop.Alpha,
+				})
+			end
+			return Data
+		end
+
+		function GradientPicker:Deserialize(Data, Rotation)
+			if type(Data) ~= "table" or #Data < 2 then
+				return
+			end
+			local Stops = {}
+			for _, Entry in Data do
+				local Ok, Color = pcall(Color3.fromHex, Entry.Color)
+				if Ok and typeof(Color) == "Color3" then
+					table.insert(Stops, MakeStop(Entry.Time or 0, Color, Entry.Alpha or 0))
+				end
+			end
+			if #Stops < 2 then
+				return
+			end
+			self.Stops = Stops
+			if type(Rotation) == "number" then
+				self.Rotation = math.clamp(Rotation, 0, 360)
+			end
+			self:Display()
+		end
+
+		function GradientPicker:OnChanged(Func)
+			GradientPicker.Changed = Func
+			Func(GradientPicker.Value, GradientPicker.TransparencyValue, GradientPicker.Rotation)
+		end
+
+		function GradientPicker:Destroy()
+			Row:Destroy()
+			Library.Options[Idx] = nil
+		end
+
+		Creator.AddGuarded(Row.Body, "MouseButton1Click", Open)
+
+		GradientPicker:Display()
+
+		Library.Options[Idx] = GradientPicker
+		return GradientPicker
 	end
 
 	return Element
@@ -23013,6 +25048,7 @@ ElementsTable.CardPicker = (function()
 			})
 
 			local ImageLabel
+			local Glyph, GlyphProperty, GlyphTag
 			if Item.Image then
 				ImageLabel = New("ImageLabel", {
 					Image = Resolve(Item.Image, "Element") or "",
@@ -23028,16 +25064,18 @@ ElementsTable.CardPicker = (function()
 					Preview.BackgroundTransparency = Item.Add and 0.93 or 0.9
 					Creator.AddThemeObject(Preview, { BackgroundColor3 = "Hover" })
 				end
-				New("ImageLabel", {
+				Glyph = New("ImageLabel", {
 					Image = Resolve(Item.Icon, "Element") or "",
 					Size = UDim2.fromOffset(18, 18),
 					AnchorPoint = Vector2.new(0.5, 0.5),
 					Position = UDim2.fromScale(0.5, 0.5),
+					BackgroundTransparency = 1,
 					Parent = Preview,
 					ThemeTag = {
 						ImageColor3 = "SubText",
 					},
 				})
+				GlyphProperty, GlyphTag = "ImageColor3", "SubText"
 			elseif Item.Text then
 				local Sample = Label({
 					Text = Item.Text,
@@ -23057,6 +25095,7 @@ ElementsTable.CardPicker = (function()
 					Creator.AddThemeObject(Preview, { BackgroundColor3 = "Hover" })
 				end
 				ImageLabel = Sample
+				Glyph, GlyphProperty, GlyphTag = Sample, "TextColor3", "Text"
 			else
 				New("Frame", {
 					Size = UDim2.new(0.26, 0, 1, 0),
@@ -23149,48 +25188,63 @@ ElementsTable.CardPicker = (function()
 				Check = Check,
 				Image = ImageLabel,
 				Name = Name,
+				Glyph = Glyph,
+				GlyphProperty = GlyphProperty,
+				GlyphTag = GlyphTag,
+				Plain = Item.Colors == nil and not Item.Image,
 			}
 
 			if Item.OnDelete then
 				local Delete = New("TextButton", {
 					Size = UDim2.fromOffset(17, 17),
-					AnchorPoint = Vector2.new(1, 0),
-					Position = UDim2.new(1, -4, 0, 4),
+					Position = UDim2.fromOffset(24, 4),
 					Text = "",
 					AutoButtonColor = false,
-					BackgroundColor3 = Color3.new(0, 0, 0),
-					BackgroundTransparency = 0.35,
+					BackgroundTransparency = 0.1,
 					Visible = false,
 					ZIndex = 5,
 					Parent = Preview,
+					ThemeTag = {
+						BackgroundColor3 = "Danger",
+					},
 				}, {
 					Corner(999),
 					New("ImageLabel", {
-						Image = Asset("x") or "",
+						Image = Asset("trash-2") or "rbxassetid://10747362241",
 						Size = UDim2.fromOffset(10, 10),
 						AnchorPoint = Vector2.new(0.5, 0.5),
 						Position = UDim2.fromScale(0.5, 0.5),
+						BackgroundTransparency = 1,
 						ImageColor3 = Color3.new(1, 1, 1),
 						ZIndex = 6,
 					}),
 				})
 				Entry.Delete = Delete
 				Creator.AddGuarded(Delete, "MouseButton1Click", function()
-					Library:SafeCallback(Item.OnDelete, Item.Id)
+					local Window = Library.Window
+					local function Run()
+						Library:SafeCallback(Item.OnDelete, Item.Id)
+					end
+					if not Window then
+						Run()
+						return
+					end
+					Window:Dialog({
+						Title = Item.DeleteTitle or "Delete",
+						Content = Item.DeleteContent or ('Are you sure you want to delete "' .. tostring(Item.Title or Item.Id) .. '"? This cannot be undone.'),
+						Buttons = {
+							{ Title = "Delete", Variant = "Danger", Callback = Run },
+							{ Title = "Cancel" },
+						},
+					})
 				end)
 			end
 
 			Creator.OnHoverEnter(Card, function()
 				Creator.Tween(Preview, 0.15, { Position = UDim2.fromOffset(0, 0) })
-				if Entry.Delete then
-					Entry.Delete.Visible = true
-				end
 			end)
 			Creator.OnHoverLeave(Card, function()
 				Creator.Tween(Preview, 0.15, { Position = UDim2.fromOffset(0, 2) })
-				if Entry.Delete then
-					Entry.Delete.Visible = false
-				end
 			end)
 			Creator.AddGuarded(Card, "MouseButton1Click", function()
 				if Item.Add then
@@ -23210,6 +25264,9 @@ ElementsTable.CardPicker = (function()
 					local On = Id == Picker.Value
 					Creator.OverrideTag(Entry.Ring, { Color = On and "Accent" or "ElementBorder" })
 					Entry.Check.Visible = On
+					if Entry.Delete then
+						Entry.Delete.Visible = On
+					end
 					local Goal = On and 0 or 0.86
 					if Instant then
 						Entry.Ring.Transparency = Goal
@@ -23224,6 +25281,21 @@ ElementsTable.CardPicker = (function()
 			table.insert(Picker.Items, Item)
 			BuildCard(Item)
 		end
+
+		local function Tint()
+			for _, Entry in next, Cards do
+				if Entry.Card.Parent then
+					if Entry.Glyph and Entry.GlyphProperty then
+						Entry.Glyph[Entry.GlyphProperty] = Creator.GetThemeProperty(Entry.GlyphTag)
+					end
+					if Entry.Plain then
+						Entry.Preview.BackgroundColor3 = Creator.GetThemeProperty("Hover")
+					end
+					Entry.Name.TextColor3 = Creator.GetThemeProperty("TextSecondary")
+				end
+			end
+		end
+		local TintConnection = Library.ThemeChanged:Connect(Tint)
 
 		if Config.AddCard then
 			local AddItem = {
@@ -23243,6 +25315,7 @@ ElementsTable.CardPicker = (function()
 			table.insert(Picker.Items, Item)
 			BuildCard(Item)
 			Paint(true)
+			Tint()
 		end
 
 		function Picker:RemoveItem(Id)
@@ -23289,11 +25362,13 @@ ElementsTable.CardPicker = (function()
 		end
 
 		function Picker:Destroy()
+			TintConnection:Disconnect()
 			Row:Destroy()
 			Library.Options[Idx] = nil
 		end
 
 		Paint(true)
+		Tint()
 
 		Library.Options[Idx] = Picker
 		return Picker
@@ -24502,13 +26577,39 @@ ElementsTable.Group = (function()
 	end
 
 	function Methods:SetCorners(Top, Bottom, Separator)
-		self.Divider.Visible = Separator and true or false
-		self.Fill.Visible = not Top or not Bottom
+		local Merged = self.Direction == "Horizontal" and not (Top and Bottom)
+		self.Merged = Merged
+		self.Divider.Visible = Separator and not Merged or false
 		for _, Row in self.Holder:Rows() do
 			if Row.Kind ~= "Group" and Row.SetCorners then
-				Row:SetCorners(Top, Bottom, false)
+				Row:SetCorners(Top, Bottom, Separator and Merged or false)
 			end
 		end
+	end
+
+	function Methods:ApplySpace(Top, Bottom)
+		local Padding = self.Root.UIPadding
+		if self.Spacing == Bottom and self.TopSpacing == Top then
+			return
+		end
+		self.Spacing = Bottom
+		self.TopSpacing = Top
+		Padding.PaddingTop = UDim.new(0, Top)
+		Padding.PaddingBottom = UDim.new(0, Bottom)
+		self.Holder.Shadow.VerticalLimit = math.max(Bottom - 1, 5)
+		ApplyDepth(self.Holder.Shadow)
+	end
+
+	function Methods:SetAutoSpace(Value)
+		self.AutoSpace = Value == true
+		if not self.AutoSpace then
+			self:ApplySpace(0, self.SpaceSize)
+		end
+		self.Home:QueueRefresh()
+	end
+
+	function Methods:GetAutoSpace()
+		return self.AutoSpace
 	end
 
 	function Methods:HasIcon()
@@ -24527,10 +26628,10 @@ ElementsTable.Group = (function()
 	end
 
 	function Methods:SetSpacing(Value)
-		self.Spacing = math.max(0, tonumber(Value) or 0)
-		self.Root.UIPadding.PaddingBottom = UDim.new(0, self.Spacing)
-		self.Holder.Shadow.VerticalLimit = math.max(self.Spacing - 1, 5)
-		ApplyDepth(self.Holder.Shadow)
+		self.SpaceSize = math.max(0, tonumber(Value) or 0)
+		if not self.AutoSpace then
+			self:ApplySpace(0, self.SpaceSize)
+		end
 		self.Home:QueueRefresh()
 	end
 
@@ -24619,6 +26720,7 @@ ElementsTable.Group = (function()
 
 		local Parent = self.Holder
 		local Spacing = math.max(0, tonumber(Config.Spacing) or 12)
+		local AutoSpace = Config.AutoSpace == true
 		local Holder = Components.Section(Config.Title or "", Parent.Container, {
 			LayoutOrder = Parent:NextOrder(),
 			IconColor = Config.IconColor,
@@ -24636,13 +26738,13 @@ ElementsTable.Group = (function()
 		})
 
 		Holder.Up = Parent
-		Holder.Shadow.VerticalLimit = math.max(Spacing - 1, 5)
+		Holder.Shadow.VerticalLimit = math.max((if AutoSpace then 0 else Spacing) - 1, 5)
 		if Config.Locked then
 			Holder:SetLocked(true, Config.LockedReason)
 		end
 
 		New("UIPadding", {
-			PaddingBottom = UDim.new(0, Spacing),
+			PaddingBottom = UDim.new(0, if AutoSpace then 0 else Spacing),
 			Parent = Holder.Root,
 		})
 
@@ -24663,22 +26765,12 @@ ElementsTable.Group = (function()
 			Title = Config.Title or "",
 			Direction = Normalize(Config.Direction),
 			Gap = math.max(0, tonumber(Config.Gap) or 8),
-			Spacing = Spacing,
+			Spacing = if AutoSpace then 0 else Spacing,
+			TopSpacing = 0,
+			SpaceSize = Spacing,
+			AutoSpace = AutoSpace,
+			Merged = false,
 		}, Meta)
-
-		Group.Fill = New("Frame", {
-			Name = "Fill",
-			Position = UDim2.new(0, 14, 0, 0),
-			Size = UDim2.new(1, -28, 1, 0),
-			BackgroundTransparency = if Library:GetPanelAlpha() >= 0.999 then 0 else 1,
-			Visible = false,
-			ZIndex = 0,
-			Parent = Holder.Shell,
-			ThemeTag = {
-				BackgroundColor3 = "Element",
-			},
-		})
-		Library.PanelBackings[Group.Fill] = true
 
 		Group.Divider = New("Frame", {
 			Name = "Divider",
@@ -26212,6 +28304,13 @@ function Library:CreateWindow(Config)
 		IntroModule.Window = Window
 	end
 
+	if Config.TitleColor ~= nil then
+		Window:SetTitleColor(Config.TitleColor, Config.TitleColorOptions)
+	end
+	if Config.SubTitleColor ~= nil then
+		Window:SetSubTitleColor(Config.SubTitleColor, Config.SubTitleColorOptions)
+	end
+
 	Library.Window = Window
 	Library:SetTheme(Library.Theme)
 	Library.Background:Mount(Window)
@@ -26359,8 +28458,15 @@ function Library:SetHoverStyle(Value)
 	end
 end
 
+Library.MiniMessage = true
 Library.ColorpickerStyle = "Chromium"
 Library.ColorpickerStyles = { "Fluent", "Chromium", "Wheel" }
+Library.GradientPickerStyle = "Chromium"
+Library.GradientPickerStyles = { "Fluent", "Chromium", "Wheel" }
+
+function Library:SetGradientPickerStyle(Value)
+	Library.GradientPickerStyle = table.find(Library.GradientPickerStyles, Value) and Value or "Chromium"
+end
 
 function Library:SetColorpickerStyle(Value)
 	Library.ColorpickerStyle = table.find(Library.ColorpickerStyles, Value) and Value or "Chromium"
@@ -26725,6 +28831,355 @@ function Library:GetThemeData(Name, Mode)
 	return Resolved or ThemeResolver.Resolve("Dark", Library.ThemeMode)
 end
 
+Library.CustomThemes = {}
+
+local BuiltinThemes = {}
+for _, ThemeName in next, Themes.Names do
+	BuiltinThemes[ThemeName] = true
+end
+for AliasName in next, Themes.Aliases do
+	BuiltinThemes[AliasName] = true
+end
+
+local ThemeSkipKeys = { Name = true, Base = true, Background = true, Persist = true, Custom = true }
+local BackgroundTuning = { "Scope", "PanelOpacity", "Strength", "Blur", "Saturation", "Fit", "Zoom", "OffsetX", "OffsetY" }
+
+local function TrimText(Text)
+	return (string.gsub(tostring(Text or ""), "^%s*(.-)%s*$", "%1"))
+end
+
+local function ParseThemeColor(Value)
+	local Kind = typeof(Value)
+	if Kind == "Color3" then
+		return Value
+	end
+	if Kind == "string" then
+		local Hex = string.match(Value, "^#?(%x%x%x%x%x%x)$")
+		if Hex then
+			local Ok, Color = pcall(Color3.fromHex, Hex)
+			return Ok and Color or nil
+		end
+		return nil
+	end
+	if Kind == "table" then
+		local Red = Value.R or Value.r or Value[1]
+		local Green = Value.G or Value.g or Value[2]
+		local Blue = Value.B or Value.b or Value[3]
+		if type(Red) == "number" and type(Green) == "number" and type(Blue) == "number" then
+			return Color3.fromRGB(math.clamp(Red, 0, 255), math.clamp(Green, 0, 255), math.clamp(Blue, 0, 255))
+		end
+	end
+	return nil
+end
+
+local function ParseThemeSequence(Value)
+	if typeof(Value) == "ColorSequence" then
+		return Value
+	end
+	local Single = ParseThemeColor(Value)
+	if Single and not (type(Value) == "table" and #Value > 0 and type(Value[1]) ~= "number") then
+		return ColorSequence.new(Single)
+	end
+	if type(Value) ~= "table" then
+		return nil
+	end
+
+	local Stops = Value.Keypoints or Value.Sequence or Value
+	local Count = #Stops
+	if Count == 0 then
+		return nil
+	end
+
+	local Points = {}
+	for Index, Stop in ipairs(Stops) do
+		local Time, Color
+		if type(Stop) == "table" then
+			Time = Stop.Time or Stop.T or Stop.time
+			if Time ~= nil then
+				Color = ParseThemeColor(Stop.Color or Stop.Value or Stop.color)
+			elseif type(Stop[1]) == "number" and Stop[2] ~= nil and Stop[3] == nil then
+				Time = Stop[1]
+				Color = ParseThemeColor(Stop[2])
+			else
+				Color = ParseThemeColor(Stop)
+			end
+		else
+			Color = ParseThemeColor(Stop)
+		end
+		if not Color then
+			return nil
+		end
+		if type(Time) ~= "number" then
+			Time = Count == 1 and 0 or (Index - 1) / (Count - 1)
+		end
+		table.insert(Points, { Time = math.clamp(Time, 0, 1), Color = Color })
+	end
+
+	table.sort(Points, function(A, B)
+		return A.Time < B.Time
+	end)
+	if Points[1].Time > 0 then
+		table.insert(Points, 1, { Time = 0, Color = Points[1].Color })
+	end
+	if Points[#Points].Time < 1 then
+		table.insert(Points, { Time = 1, Color = Points[#Points].Color })
+	end
+
+	local Keypoints = {}
+	local LastTime = -1
+	for _, Point in ipairs(Points) do
+		if Point.Time > LastTime then
+			table.insert(Keypoints, ColorSequenceKeypoint.new(Point.Time, Point.Color))
+			LastTime = Point.Time
+		end
+	end
+	if #Keypoints < 2 then
+		return ColorSequence.new(Points[1].Color)
+	end
+
+	local Ok, Sequence = pcall(ColorSequence.new, Keypoints)
+	return Ok and Sequence or nil
+end
+
+local function SerializeThemeValue(Value)
+	local Kind = typeof(Value)
+	if Kind == "Color3" then
+		return "#" .. string.upper(Value:ToHex())
+	end
+	if Kind == "ColorSequence" then
+		local Stops = {}
+		for _, Keypoint in ipairs(Value.Keypoints) do
+			table.insert(Stops, { T = Keypoint.Time, Color = "#" .. string.upper(Keypoint.Value:ToHex()) })
+		end
+		return Stops
+	end
+	if type(Value) == "table" then
+		local Copy = {}
+		for Key, Inner in next, Value do
+			Copy[Key] = SerializeThemeValue(Inner)
+		end
+		return Copy
+	end
+	return Value
+end
+
+local function NormalizeThemeBackground(Value)
+	if Value == nil then
+		return nil
+	end
+	if type(Value) == "string" or type(Value) == "number" then
+		Value = { Image = Value }
+	end
+	if type(Value) ~= "table" then
+		return nil, "Background must be a table or an image source"
+	end
+	local Source = Value.Image or Value.Source or Value.Asset or Value.Path or Value.Url
+	if Source == nil or TrimText(Source) == "" then
+		return nil, "Background needs an Image (asset id, link or file path)"
+	end
+	local Result = { Image = TrimText(Source), Name = Value.Name and tostring(Value.Name) or nil }
+	for _, Key in next, BackgroundTuning do
+		if Value[Key] ~= nil then
+			Result[Key] = Value[Key]
+		end
+	end
+	return Result
+end
+
+local function BuildThemeData(Name, Data)
+	local Base = Themes.Dark
+
+	local Result = {}
+	for Key, Value in next, Base do
+		if not ThemeSkipKeys[Key] then
+			Result[Key] = Value
+		end
+	end
+	Result.Name = Name
+	Result.Custom = true
+
+	for Key, Value in next, Data do
+		if not ThemeSkipKeys[Key] then
+			local Template = Base[Key]
+			local Kind = typeof(Template)
+			if Kind == "Color3" then
+				local Color = ParseThemeColor(Value)
+				if not Color then
+					return nil, "'" .. tostring(Key) .. "' needs a Color3, #RRGGBB or {R, G, B}"
+				end
+				Result[Key] = Color
+			elseif Kind == "ColorSequence" then
+				local Sequence = ParseThemeSequence(Value)
+				if not Sequence then
+					return nil, "'" .. tostring(Key) .. "' needs a ColorSequence, color list or {Time, Color} stops"
+				end
+				Result[Key] = Sequence
+			elseif Kind == "number" then
+				if type(Value) ~= "number" then
+					return nil, "'" .. tostring(Key) .. "' needs a number"
+				end
+				Result[Key] = Value
+			elseif Kind == "nil" then
+				Library:Alert("CreateTheme '" .. Name .. "': unknown key '" .. tostring(Key) .. "' was ignored", "Warning")
+			else
+				Result[Key] = Value
+			end
+		end
+	end
+
+	return Result
+end
+
+local function SerializeThemeSource(Data)
+	local Output = {}
+	for Key, Value in next, Data do
+		if Key ~= "Persist" then
+			if Key == "Background" then
+				local Background = NormalizeThemeBackground(Value)
+				Output.Background = Background and SerializeThemeValue(Background) or nil
+			else
+				Output[Key] = SerializeThemeValue(Value)
+			end
+		end
+	end
+	return Output
+end
+
+function Library:CreateTheme(Name, Data, Options)
+	if type(Name) == "table" and Data == nil then
+		Data = Name
+		Name = Data.Name
+	end
+	Options = Options or {}
+	Name = TrimText(Name)
+	if Name == "" then
+		return false, "A theme needs a name"
+	end
+	if type(Data) ~= "table" then
+		return false, "A theme needs a data table"
+	end
+	if BuiltinThemes[Name] then
+		return false, "'" .. Name .. "' is a built-in theme and cannot be replaced"
+	end
+
+	local Theme, Problem = BuildThemeData(Name, Data)
+	if not Theme then
+		Library:Alert("CreateTheme '" .. Name .. "': " .. tostring(Problem), "Error")
+		return false, Problem
+	end
+
+	if Data.Background ~= nil then
+		local Background, BackgroundProblem = NormalizeThemeBackground(Data.Background)
+		if not Background then
+			Library:Alert("CreateTheme '" .. Name .. "': " .. tostring(BackgroundProblem), "Error")
+			return false, BackgroundProblem
+		end
+		Theme.Background = Background
+	end
+
+	local Replaced = Themes[Name] ~= nil
+	Themes[Name] = Theme
+	ThemeResolver.Clear(Name)
+	if not table.find(Themes.Names, Name) then
+		table.insert(Themes.Names, Name)
+	end
+
+	local Entry = {
+		Name = Name,
+		Origin = Options.Origin or "code",
+		Persist = Options.Persist ~= false and Data.Persist ~= false,
+		Data = SerializeThemeSource(Data),
+	}
+	Entry.Data.Name = Name
+	Library.CustomThemes[Name] = Entry
+
+	if Library.Window and Library.Theme == Name then
+		Creator.UpdateTheme(RefreshAfterTheme)
+	end
+	Library:Emit("ThemeAdded", Name, Replaced, Entry)
+	return true, Theme
+end
+
+Library.AddTheme = Library.CreateTheme
+Library.RegisterTheme = Library.CreateTheme
+
+function Library:RemoveTheme(Name)
+	Name = TrimText(Name)
+	local Entry = Library.CustomThemes[Name]
+	if not Entry then
+		return false, "'" .. Name .. "' is not a custom theme"
+	end
+
+	Library.CustomThemes[Name] = nil
+	Themes[Name] = nil
+	local Index = table.find(Themes.Names, Name)
+	if Index then
+		table.remove(Themes.Names, Index)
+	end
+	ThemeResolver.Clear(Name)
+	ThemeResolver.ModeBlacklist[Name] = nil
+
+	if Library.Theme == Name then
+		if Library.Window then
+			Library:SetTheme("Dark")
+		else
+			Library.Theme = "Dark"
+		end
+	end
+	Library:Emit("ThemeRemoved", Name, Entry)
+	return true
+end
+
+function Library:IsCustomTheme(Name)
+	return Library.CustomThemes[Themes.Aliases[Name] or Name] ~= nil
+end
+
+function Library:GetCustomThemes()
+	local List = {}
+	for Name in next, Library.CustomThemes do
+		table.insert(List, Name)
+	end
+	table.sort(List)
+	return List
+end
+
+function Library:ExportTheme(Name)
+	local Entry = Library.CustomThemes[Name]
+	if not Entry then
+		return nil
+	end
+	return HttpService:JSONDecode(HttpService:JSONEncode(Entry.Data))
+end
+
+function Library:ImportTheme(Source, Options)
+	if type(Source) == "string" then
+		local Ok, Decoded = pcall(HttpService.JSONDecode, HttpService, Source)
+		if not Ok then
+			return false, "Theme JSON is not valid"
+		end
+		Source = Decoded
+	end
+	if type(Source) ~= "table" then
+		return false, "ImportTheme needs a table or a JSON string"
+	end
+	return Library:CreateTheme(Source.Name, Source, Options)
+end
+
+function Library:GetThemeBackground(Name)
+	local Theme = Themes[Themes.Aliases[Name] or Name]
+	return Theme and Theme.Background or nil
+end
+
+function Library:GetThemesWithBackground()
+	local List = {}
+	for _, Name in next, Themes.Names do
+		if Library:GetThemeBackground(Name) then
+			table.insert(List, Name)
+		end
+	end
+	return List
+end
+
 function Library:ToggleTransparency(Value)
 	Library.Transparency = Value and true or false
 	if Library.Window then
@@ -26761,14 +29216,23 @@ function Library:Notify(Config)
 	return NotificationModule:New(Config)
 end
 
-function Library:Toast(Config: any, Duration: number?): any
+function Library:Toast(Config: any, Duration: number?, Origin: any?): any
 	if IntroModule.Active then
 		return nil
 	end
 	if type(Config) == "string" then
-		Config = { Text = Config, Duration = Duration }
+		Config = { Text = Config, Duration = Duration, Origin = Origin }
 	end
 	return ToastModule:New(Config)
+end
+
+function Library:SetToastOrigin(From: string, To: string?): (string, string)
+	local NewFrom, NewTo = ToastModule:SetOrigin(From, To)
+	return NewFrom, NewTo or NewFrom
+end
+
+function Library:GetToastOrigin(): (string, string)
+	return ToastModule:GetOrigin()
 end
 
 Library.AlertTimes = {}
@@ -26870,15 +29334,25 @@ function Library:SetPanelAlpha(Value)
 	end
 end
 
+function Library:EnumFontPath(Name, Fallback)
+	local Ok, Result = pcall(function()
+		return Font.fromEnum(Enum.Font[Name]).Family
+	end)
+	if Ok and type(Result) == "string" and Result ~= "" then
+		return Result
+	end
+	return Fallback
+end
+
 Library.FontFamilies = {
-	{ Name = "Gotham", Path = "rbxasset://fonts/families/GothamSSm.json" },
-	{ Name = "Builder Sans", Path = "rbxasset://fonts/families/BuilderSans.json" },
-	{ Name = "Montserrat", Path = "rbxasset://fonts/families/Montserrat.json" },
-	{ Name = "Nunito", Path = "rbxasset://fonts/families/Nunito.json" },
-	{ Name = "Roboto", Path = "rbxasset://fonts/families/Roboto.json" },
-	{ Name = "Source Sans", Path = "rbxasset://fonts/families/SourceSansPro.json" },
-	{ Name = "Arimo", Path = "rbxasset://fonts/families/Arimo.json" },
-	{ Name = "Ubuntu", Path = "rbxasset://fonts/families/Ubuntu.json" },
+	{ Name = "Gotham", Path = Library:EnumFontPath("Gotham", "rbxasset://fonts/families/GothamSSm.json") },
+	{ Name = "Builder Sans", Path = Library:EnumFontPath("BuilderSans", "rbxasset://fonts/families/BuilderSans.json") },
+	{ Name = "Nunito", Path = Library:EnumFontPath("Nunito", "rbxasset://fonts/families/Nunito.json") },
+	{ Name = "Roboto", Path = Library:EnumFontPath("Roboto", "rbxasset://fonts/families/Roboto.json") },
+	{ Name = "Source Sans", Path = Library:EnumFontPath("SourceSans", "rbxasset://fonts/families/SourceSansPro.json") },
+	{ Name = "Arimo", Path = Library:EnumFontPath("Arimo", "rbxasset://fonts/families/Arimo.json") },
+	{ Name = "Ubuntu", Path = Library:EnumFontPath("Ubuntu", "rbxasset://fonts/families/Ubuntu.json") },
+	{ Name = "Titillium Web", Path = Library:EnumFontPath("TitilliumWeb", "rbxasset://fonts/families/TitilliumWeb.json") },
 }
 
 Library.AppFont = "Gotham"
@@ -26986,7 +29460,29 @@ function Library:SetAppFont(Name)
 	return true
 end
 
-Library.FontFolder = "FluentSettings/fonts"
+Library.Folder = "FluentSettings"
+
+function Library:GetFolder(Name)
+	if Name then
+		return Library.Folder .. "/" .. Name
+	end
+	return Library.Folder
+end
+
+function Library:EnsureFolder(Path)
+	if not (isfolder and makefolder) then
+		return false
+	end
+	local Built
+	for Part in string.gmatch(Path, "[^/]+") do
+		Built = Built and (Built .. "/" .. Part) or Part
+		if not isfolder(Built) then
+			makefolder(Built)
+		end
+	end
+	return true
+end
+
 Library.FontWeights = { Auto = 0, Thin = 100, ExtraLight = 200, Light = 300, Regular = 400, Medium = 500, SemiBold = 600, Bold = 700, ExtraBold = 800, Heavy = 900 }
 Library.FontWeightNames = { "Auto", "Thin", "ExtraLight", "Light", "Regular", "Medium", "SemiBold", "Bold", "ExtraBold", "Heavy" }
 
@@ -27008,6 +29504,14 @@ local function Download(Url)
 end
 
 function Library:LoadFontFile(Source, Name, Weight, Style)
+	if typeof(Source) == "EnumItem" then
+		Name = Name or Source.Name
+		local Ok, Face = pcall(Font.fromEnum, Source)
+		if not (Ok and type(Face.Family) == "string") then
+			return false, "Unknown font enum"
+		end
+		Source = Face.Family
+	end
 	Source = string.gsub(tostring(Source or ""), "^%s*(.-)%s*$", "%1")
 	if Source == "" then
 		return false, "Type a font file, URL or asset id first"
@@ -27034,17 +29538,12 @@ function Library:LoadFontFile(Source, Name, Weight, Style)
 		if not Body then
 			return false, "Download failed"
 		end
-		if not isfolder("FluentSettings") then
-			makefolder("FluentSettings")
-		end
-		if not isfolder(Library.FontFolder) then
-			makefolder(Library.FontFolder)
-		end
+		Library:EnsureFolder(Library:GetFolder("fonts"))
 		local File = string.match(string.gsub(Source, "[%?#].*$", ""), "([^/]+)$") or "font.ttf"
 		if not string.match(File, "%.%w+$") then
 			File ..= ".ttf"
 		end
-		Path = Library.FontFolder .. "/" .. string.gsub(File, "[^%w%._%-]", "_")
+		Path = Library:GetFolder("fonts") .. "/" .. string.gsub(File, "[^%w%._%-]", "_")
 		writefile(Path, Body)
 	elseif not isfile(Path) then
 		return false, "File not found in workspace"
@@ -27085,6 +29584,59 @@ function Library:LoadFontFile(Source, Name, Weight, Style)
 	return true, Family
 end
 
+function Library:CreateFont(Name, Source, Options)
+	Options = Options or {}
+	Name = string.gsub(tostring(Name or ""), "^%s*(.-)%s*$", "%1")
+	if Name == "" then
+		return false, "A font needs a name"
+	end
+	local Existing = Library:GetFontFamily(Name)
+	if Existing and not Existing.Custom then
+		return false, "'" .. Name .. "' is a built-in font and cannot be replaced"
+	end
+
+	local Ok, Result = Library:LoadFontFile(Source, Name, Options.Weight or "Auto", Options.Style or "Normal")
+	if not Ok then
+		Library:Alert("CreateFont '" .. Name .. "': " .. tostring(Result), "Error")
+		return false, Result
+	end
+
+	Result.Code = true
+	for Key in next, FontCache do
+		FontCache[Key] = nil
+	end
+	Library:Emit("FontAdded", Result.Name, Result, Existing ~= nil)
+
+	if Options.Apply or Library.AppFont == Result.Name then
+		Library:SetAppFont(Result.Name)
+	end
+	return true, Result
+end
+
+Library.AddFont = Library.CreateFont
+
+function Library:RemoveFont(Name)
+	local Family = Library:GetFontFamily(Name)
+	if not Family or not Family.Custom then
+		return false, "'" .. tostring(Name) .. "' is not a custom font"
+	end
+	local Removed = Library:RemoveFontFamily(Name)
+	if Removed then
+		Library:Emit("FontRemoved", Name)
+	end
+	return Removed
+end
+
+function Library:GetCustomFonts()
+	local List = {}
+	for _, Family in next, Library.FontFamilies do
+		if Family.Custom then
+			table.insert(List, Family.Name)
+		end
+	end
+	return List
+end
+
 local AssetService = GetService("AssetService")
 
 -- Animated Background Made by my Tunisian friend
@@ -27103,9 +29655,9 @@ local BackgroundManager = {
 	DefaultTitle = nil,
 	Items = {},
 	MaxItems = 10,
-	Folder = "FluentSettings/backgrounds",
 	AnimToken = 0,
 	Hooks = {},
+	Profiles = {},
 }
 Library.Background = BackgroundManager
 
@@ -28222,8 +30774,49 @@ function BackgroundManager:Changed()
 	end
 end
 
+local ProfileKeys = { "Scope", "PanelOpacity", "Strength", "Blur", "Saturation", "Fit", "Zoom", "OffsetX", "OffsetY" }
+local ProfileDefaults = {
+	Scope = "Whole window",
+	PanelOpacity = 1,
+	Strength = 1,
+	Blur = 0,
+	Saturation = 1,
+	Fit = "Cover",
+	Zoom = 1,
+	OffsetX = 0,
+	OffsetY = 0,
+}
+
+function BackgroundManager:StoreProfile()
+	local Profile = self.Profiles[self.Active] or {}
+	for _, Key in next, ProfileKeys do
+		Profile[Key] = self[Key]
+	end
+	self.Profiles[self.Active] = Profile
+end
+
+function BackgroundManager:LoadProfile()
+	local Profile = self.Profiles[self.Active]
+	for _, Key in next, ProfileKeys do
+		local Value = Profile and Profile[Key]
+		if Value == nil then
+			Value = ProfileDefaults[Key]
+		end
+		self[Key] = Value
+	end
+	if not FitTypes[self.Fit] then
+		self.Fit = "Cover"
+	end
+end
+
 function BackgroundManager:Select(Id)
-	self.Active = Id or "none"
+	Id = Id or "none"
+	if Id ~= self.Active then
+		self:StoreProfile()
+		self.Active = Id
+		self:LoadProfile()
+		self.SyncRequest = true
+	end
 	if Id ~= "none" then
 		self.Scope = self.Scope or "Whole window"
 	end
@@ -28233,6 +30826,7 @@ end
 
 function BackgroundManager:Set(Key, Value)
 	self[Key] = Value
+	self:StoreProfile()
 	self:Refresh()
 	self:Changed()
 end
@@ -28247,11 +30841,15 @@ function BackgroundManager:Remove(Id)
 			break
 		end
 	end
-	if self.Active == "custom:" .. Id then
-		self:Select("none")
-	else
-		self:Changed()
+	local Key = "custom:" .. Id
+	self.Profiles[Key] = nil
+	if self.Active == Key then
+		self.Active = "none"
+		self:LoadProfile()
+		self.SyncRequest = true
+		self:Refresh()
 	end
+	self:Changed()
 end
 
 local VideoExt = { mp4 = true, webm = true }
@@ -28280,7 +30878,7 @@ function BackgroundManager:AddAnimation(Data, Name)
 	return true, Item
 end
 
-function BackgroundManager:AddSource(Input)
+function BackgroundManager:AddSource(Input, KeepActive, Extra)
 	Input = string.gsub(tostring(Input or ""), "^%s*(.-)%s*$", "%1")
 	if Input == "" then
 		return false, "Type a file name, URL or asset id first"
@@ -28334,14 +30932,10 @@ function BackgroundManager:AddSource(Input)
 		if not Body then
 			return false, "Download failed"
 		end
-		if not isfolder("FluentSettings") then
-			makefolder("FluentSettings")
-		end
-		if not isfolder(self.Folder) then
-			makefolder(self.Folder)
-		end
+		local Folder = Library:GetFolder("backgrounds")
+		Library:EnsureFolder(Folder)
 		Ext = Ext or (Item.isVideo and "webm" or "png")
-		Item.path = self.Folder .. "/" .. Id .. "." .. Ext
+		Item.path = Folder .. "/" .. Id .. "." .. Ext
 		writefile(Item.path, Body)
 		Item.downloaded = true
 		Item.name = string.match(string.gsub(Input, "[%?#].*$", ""), "([^/]+)%.%w+$") or "Web image"
@@ -28354,6 +30948,12 @@ function BackgroundManager:AddSource(Input)
 	end
 
 	Item.name = string.sub(Item.name, 1, 16)
+	if type(Extra) == "table" then
+		for Key, Value in next, Extra do
+			Item[Key] = Value
+		end
+		Item.name = string.sub(tostring(Item.name or "Image"), 1, 16)
+	end
 	if Item.animated then
 		if not (readfile and loadstring) then
 			return false, "Executor cannot read frame files"
@@ -28366,12 +30966,25 @@ function BackgroundManager:AddSource(Input)
 	end
 
 	table.insert(self.Items, Item)
-	self:Select("custom:" .. Id)
+	if KeepActive then
+		self:Changed()
+	else
+		self:Select("custom:" .. Id)
+	end
 	return true, Item
 end
 
 function BackgroundManager:Export()
+	self:StoreProfile()
 	local Items = {}
+	local Profiles = {}
+	for Key, Profile in next, self.Profiles do
+		local Copy = {}
+		for _, Name in next, ProfileKeys do
+			Copy[Name] = Profile[Name]
+		end
+		Profiles[Key] = Copy
+	end
 	for _, Item in next, self.Items do
 		if Item.path or Item.asset then
 			table.insert(Items, {
@@ -28382,6 +30995,7 @@ function BackgroundManager:Export()
 				path = Item.path,
 				asset = Item.asset,
 				downloaded = Item.downloaded,
+				theme = Item.theme,
 			})
 		end
 	end
@@ -28397,6 +31011,7 @@ function BackgroundManager:Export()
 		OffsetX = self.OffsetX,
 		OffsetY = self.OffsetY,
 		Items = Items,
+		Profiles = Profiles,
 	}
 end
 
@@ -28407,7 +31022,7 @@ function BackgroundManager:Import(Data)
 	if next(Data) == nil then
 		Data = {
 			Active = "none", Scope = "Whole window", PanelOpacity = 1, Strength = 1, Blur = 0,
-			Saturation = 1, Fit = "Cover", Zoom = 1, OffsetX = 0, OffsetY = 0, Items = {},
+			Saturation = 1, Fit = "Cover", Zoom = 1, OffsetX = 0, OffsetY = 0, Items = {}, Profiles = {},
 		}
 	end
 	for _, Key in next, {
@@ -28427,9 +31042,98 @@ function BackgroundManager:Import(Data)
 			table.insert(self.Items, Item)
 		end
 	end
+	self.Profiles = {}
+	if type(Data.Profiles) == "table" then
+		for Key, Profile in next, Data.Profiles do
+			if type(Key) == "string" and type(Profile) == "table" then
+				local Copy = {}
+				for _, Name in next, ProfileKeys do
+					Copy[Name] = Profile[Name]
+				end
+				self.Profiles[Key] = Copy
+			end
+		end
+	end
+	if self.Profiles[self.Active] then
+		self:LoadProfile()
+	else
+		self:StoreProfile()
+	end
+	self.SyncRequest = true
 	if self.Layer then
 		self:Refresh()
 	end
+end
+
+
+function BackgroundManager:FindThemeItem(ThemeName)
+	for _, Item in next, self.Items do
+		if Item.theme == ThemeName then
+			return Item
+		end
+	end
+	return nil
+end
+
+function BackgroundManager:AddThemeBackground(ThemeName, Use)
+	local Spec = Library:GetThemeBackground(ThemeName)
+	if not Spec then
+		return false, "This theme has no built-in background"
+	end
+
+	local Item = self:FindThemeItem(ThemeName)
+	local Created = false
+	if not Item then
+		local Ok, Result = self:AddSource(Spec.Image, true, {
+			theme = ThemeName,
+			name = Spec.Name or ThemeName,
+		})
+		if not Ok then
+			return false, Result
+		end
+		Item = Result
+		Created = true
+		Library:Emit("BackgroundAdded", Item)
+	end
+
+	if Use then
+		local Key = "custom:" .. Item.id
+		if not self.Profiles[Key] then
+			local Ranges = {
+				PanelOpacity = { 0.05, 1 },
+				Strength = { 0.01, 1 },
+				Blur = { 0, 24 },
+				Saturation = { 0, 1 },
+				Zoom = { 1, 3 },
+				OffsetX = { -400, 400 },
+				OffsetY = { -400, 400 },
+			}
+			local Profile = {}
+			for Name, Value in next, ProfileDefaults do
+				Profile[Name] = Value
+			end
+			for Name, Range in next, Ranges do
+				if type(Spec[Name]) == "number" then
+					Profile[Name] = math.clamp(Spec[Name], Range[1], Range[2])
+				end
+			end
+			if type(Spec.Scope) == "string" and (Spec.Scope == "Whole window" or Spec.Scope == "Content only") then
+				Profile.Scope = Spec.Scope
+			end
+			if type(Spec.Fit) == "string" and FitTypes[Spec.Fit] then
+				Profile.Fit = Spec.Fit
+			end
+			self.Profiles[Key] = Profile
+		end
+		self.SyncRequest = true
+		self:Select(Key)
+	end
+
+	return true, Item, Created
+end
+
+function Library:ApplyThemeBackground(ThemeName, Use)
+	return BackgroundManager:AddThemeBackground(ThemeName, Use ~= false)
 end
 
 function Library:IsThemeModeAllowed(Name)
@@ -28497,6 +31201,7 @@ local InterfaceManager = {} do
 		IconStyle = "Plain",
 		Layout = "Fluent",
 		ColorpickerStyle = "Chromium",
+		GradientPickerStyle = "Chromium",
 		NavPosition = "Top",
 		NavLabelMode = "Hover",
 		NotificationPosition = "Bottom Right",
@@ -28515,6 +31220,8 @@ local InterfaceManager = {} do
 		AppFont = "Gotham",
 		LocalFonts = {},
 		Background = {},
+		CustomThemes = {},
+		ThemeBackgroundDisabled = {},
 	}
 	InterfaceManager.Defaults = {}
 	for Key, Value in next, InterfaceManager.Settings do
@@ -28523,6 +31230,7 @@ local InterfaceManager = {} do
 
 	function InterfaceManager:SetFolder(Folder)
 		self.Folder = Folder
+		Library.Folder = Folder
 		self:BuildFolderTree()
 	end
 
@@ -28550,6 +31258,9 @@ local InterfaceManager = {} do
 		end
 		table.insert(Paths, self.Folder)
 		table.insert(Paths, self.Folder .. "/settings")
+		table.insert(Paths, self.Folder .. "/Themes")
+		table.insert(Paths, self.Folder .. "/backgrounds")
+		table.insert(Paths, self.Folder .. "/fonts")
 		for Index = 1, #Paths do
 			local Path = Paths[Index]
 			if not isfolder(Path) then
@@ -28563,7 +31274,13 @@ local InterfaceManager = {} do
 			if not isfolder(self.Folder) then
 				self:BuildFolderTree()
 			end
-			writefile(self.Folder .. "/options.json", HttpService:JSONEncode(InterfaceManager.Settings))
+			local Output = InterfaceManager.Settings
+			if self.PendingTheme or self.PendingFont then
+				Output = table.clone(Output)
+				Output.Theme = self.PendingTheme or Output.Theme
+				Output.AppFont = self.PendingFont or Output.AppFont
+			end
+			writefile(self.Folder .. "/options.json", HttpService:JSONEncode(Output))
 		end)
 	end
 
@@ -28623,13 +31340,17 @@ local InterfaceManager = {} do
 				end)
 			end
 		end
+		self.PendingFont = nil
+		self.PendingTheme = nil
 		if not LibraryObject:SetAppFont(Settings.AppFont or "Gotham") then
+			self.PendingFont = Settings.AppFont
 			LibraryObject:SetAppFont("Gotham")
 			Settings.AppFont = "Gotham"
 		end
 
 		Settings.Theme = Themes.Aliases[Settings.Theme] or Settings.Theme
 		if not Themes[Settings.Theme] then
+			self.PendingTheme = Settings.Theme
 			Settings.Theme = self.Defaults.Theme
 		end
 		LibraryObject:SetTheme(Settings.Theme)
@@ -28642,6 +31363,7 @@ local InterfaceManager = {} do
 		LibraryObject:SetPanelDepth(Settings.PanelDepth)
 		LibraryObject:SetHoverStyle(Settings.HoverStyle)
 		LibraryObject:SetColorpickerStyle(Settings.ColorpickerStyle)
+		LibraryObject:SetGradientPickerStyle(Settings.GradientPickerStyle)
 		LibraryObject:SetLockInside(Settings.LockInsideScreen)
 		LibraryObject:SetNotificationPosition(Settings.NotificationPosition)
 		if Window then
@@ -28689,6 +31411,7 @@ local InterfaceManager = {} do
 			InterfaceHoverStyle = "HoverStyle",
 			InterfaceLayout = "Layout",
 			InterfaceColorpickerStyle = "ColorpickerStyle",
+			InterfaceGradientPickerStyle = "GradientPickerStyle",
 			InterfaceNavPosition = "NavPosition",
 			InterfaceNavLabels = "NavLabelMode",
 			InterfaceNotificationPosition = "NotificationPosition",
@@ -28734,6 +31457,10 @@ local InterfaceManager = {} do
 			end
 		end
 
+		for Name, Option in next, self.ThemeBackgroundToggles or {} do
+			Option:SetValue(self:IsThemeBackgroundDisabled(Name))
+		end
+
 		local BorderPicker = Options.InterfaceBorderColor
 		if BorderPicker then
 			BorderPicker:SetValueRGB(Color3.fromRGB(60, 60, 66))
@@ -28747,6 +31474,193 @@ local InterfaceManager = {} do
 				LibraryObject:SetTitleIcon(LibraryObject.DefaultTitleIcon)
 			end
 		end
+	end
+
+	function InterfaceManager:ThemeFile(Name)
+		return self.Folder .. "/Themes/" .. (string.gsub(Name, "[^%w%-_ ]", "_")) .. ".json"
+	end
+
+	function InterfaceManager:SaveCustomTheme(Name, Entry)
+		if not (writefile and isfolder and makefolder) then
+			return
+		end
+		pcall(function()
+			if not isfolder(self.Folder .. "/Themes") then
+				self:BuildFolderTree()
+			end
+			writefile(self:ThemeFile(Name), HttpService:JSONEncode(Entry.Data))
+		end)
+	end
+
+	function InterfaceManager:DeleteCustomTheme(Name)
+		local LibraryObject = self.Library
+		if not LibraryObject:RemoveTheme(Name) then
+			return false
+		end
+		if isfile and delfile then
+			local Path = self:ThemeFile(Name)
+			if isfile(Path) then
+				pcall(delfile, Path)
+			end
+		end
+		local Listed = self.Settings.CustomThemes
+		if type(Listed) == "table" then
+			Listed[Name] = nil
+		end
+		self:SaveSettings()
+		return true
+	end
+
+	function InterfaceManager:SyncCustomThemes()
+		local LibraryObject = self.Library
+		if not LibraryObject then
+			return
+		end
+		if isfolder and makefolder and not isfolder(self.Folder .. "/Themes") then
+			pcall(function()
+				self:BuildFolderTree()
+			end)
+		end
+
+		if self.ThemeSaver then
+			self.ThemeSaver:Disconnect()
+		end
+		self.ThemeSaver = LibraryObject:On("ThemeAdded", function(Name, _, Entry)
+			if Entry and Entry.Persist and Entry.Origin == "code" then
+				self:SaveCustomTheme(Name, Entry)
+			end
+		end)
+
+		for Name, Entry in next, LibraryObject.CustomThemes do
+			if Entry.Persist and Entry.Origin == "code" then
+				self:SaveCustomTheme(Name, Entry)
+			end
+		end
+
+		local Listed = self.Settings.CustomThemes
+		if type(Listed) == "table" then
+			for Key, Data in next, Listed do
+				if type(Data) == "table" then
+					local Name = type(Key) == "string" and Key or Data.Name
+					if type(Name) == "string" and not LibraryObject.CustomThemes[Name] then
+						LibraryObject:CreateTheme(Name, Data, { Origin = "options" })
+					end
+				end
+			end
+		end
+
+		if isfolder and listfiles and readfile then
+			pcall(function()
+				local Folder = self.Folder .. "/Themes"
+				if not isfolder(Folder) then
+					return
+				end
+				for _, File in next, listfiles(Folder) do
+					if string.match(string.lower(File), "%.json$") then
+						local Ok, Decoded = pcall(function()
+							return HttpService:JSONDecode(readfile(File))
+						end)
+						if Ok and type(Decoded) == "table" then
+							local Name = Decoded.Name or string.match(File, "([^/\\]+)%.json$")
+							if type(Name) == "string" and not LibraryObject.CustomThemes[Name] then
+								LibraryObject:CreateTheme(Name, Decoded, { Origin = "file" })
+							end
+						end
+					end
+				end
+			end)
+		end
+	end
+
+	function InterfaceManager:IsThemeBackgroundDisabled(Name)
+		local Disabled = self.Settings.ThemeBackgroundDisabled
+		return type(Disabled) == "table" and Disabled[Name] == true
+	end
+
+	function InterfaceManager:SetThemeBackgroundDisabled(Name, Value)
+		local Disabled = self.Settings.ThemeBackgroundDisabled
+		if type(Disabled) ~= "table" then
+			Disabled = {}
+			self.Settings.ThemeBackgroundDisabled = Disabled
+		end
+		local New = Value and true or nil
+		if Disabled[Name] == New then
+			return
+		end
+		Disabled[Name] = New
+		self:SaveSettings()
+	end
+
+	function InterfaceManager:OfferThemeBackground(Name)
+		local LibraryObject = self.Library
+		local Window = LibraryObject.Window
+		local Manager = LibraryObject.Background
+		if not (Window and Manager and LibraryObject:GetThemeBackground(Name)) then
+			return
+		end
+		if self:IsThemeBackgroundDisabled(Name) then
+			return
+		end
+
+		local Existing = Manager:FindThemeItem(Name)
+		if Existing and Manager.Active == "custom:" .. Existing.id then
+			return
+		end
+
+		local function Run(Use)
+			local Ok, Result = Manager:AddThemeBackground(Name, Use)
+			if not Ok then
+				LibraryObject:InternalNotify({ Title = "Background", Content = tostring(Result), Duration = 5 })
+			end
+		end
+
+		local Replaces = Manager.Active ~= "none"
+		local Content, Buttons
+		if Existing then
+			Content = '"' .. Name .. '" has a built-in background that is already in the Background Manager. Use it now?'
+			if Replaces then
+				Content ..= "\n\nIt will replace your current background."
+			end
+			Buttons = {
+				{
+					Title = "Use it",
+					Callback = function()
+						Run(true)
+					end,
+				},
+				{ Title = "Not now" },
+			}
+		else
+			Content = '"' .. Name .. '" comes with a built-in background. Add it to the Background Manager?'
+			if Replaces then
+				Content ..= "\n\nAdd & Use will replace your current background."
+			end
+			Buttons = {
+				{
+					Title = "Add & Use",
+					Callback = function()
+						Run(true)
+					end,
+				},
+				{
+					Title = "Add Only",
+					Callback = function()
+						Run(false)
+					end,
+				},
+				{ Title = "Skip" },
+			}
+		end
+
+		task.delay(0.15, function()
+			pcall(function()
+				Window:Dialog({
+					Title = "Built-in background",
+					Content = Content,
+					Buttons = Buttons,
+				})
+			end)
+		end)
 	end
 
 	function InterfaceManager:Change(Key, Value)
@@ -28764,11 +31678,18 @@ local InterfaceManager = {} do
 
 		local function ThemeItem(Name)
 			local Data = LibraryObject:GetThemeData(Name)
-			return {
+			local Item = {
 				Id = Name,
 				Title = Name,
 				Colors = { Data.AcrylicMain, Data.Element, Data.Accent, Data.SubText },
 			}
+			if LibraryObject:IsCustomTheme(Name) then
+				Item.DeleteTitle = "Delete Theme"
+				Item.OnDelete = function(Id)
+					self:DeleteCustomTheme(Id)
+				end
+			end
+			return Item
 		end
 
 		local Items = {}
@@ -28776,7 +31697,7 @@ local InterfaceManager = {} do
 			table.insert(Items, ThemeItem(Name))
 		end
 
-		Section:AddCardPicker("InterfaceTheme", {
+		local ThemePicker = Section:AddCardPicker("InterfaceTheme", {
 			Title = "Theme",
 			Description = "Color scheme",
 			Icon = "rbxassetid://10734910430",
@@ -28784,8 +31705,10 @@ local InterfaceManager = {} do
 			Items = Items,
 			Default = Settings.Theme,
 			Callback = function(Value)
+				self.PendingTheme = nil
 				LibraryObject:SetTheme(Value)
 				self:Change("Theme", Value)
+				self:OfferThemeBackground(Value)
 			end,
 		})
 
@@ -28807,19 +31730,15 @@ local InterfaceManager = {} do
 				TextFont = LibraryObject:FontFor("SemiBold", Family.Name),
 			}
 			if Family.Custom then
+				Item.DeleteTitle = "Delete Font"
 				Item.OnDelete = function(Id)
-					LibraryObject:RemoveFontFamily(Id)
 					for Index, Entry in next, Settings.LocalFonts do
 						if Entry.name == Id then
 							table.remove(Settings.LocalFonts, Index)
 							break
 						end
 					end
-					FontPicker:RemoveItem(Id)
-					if Settings.AppFont == Id then
-						Settings.AppFont = "Gotham"
-						FontPicker:SetValue("Gotham")
-					end
+					LibraryObject:RemoveFont(Id)
 					self:SaveSettings()
 				end
 			end
@@ -28934,6 +31853,66 @@ local InterfaceManager = {} do
 		})
 		table.insert(FontRows, FontButton)
 		FontButton:SetVisible(false)
+
+		if self.ThemeListener then
+			self.ThemeListener:Disconnect()
+		end
+		self.ThemeListener = LibraryObject:On("ThemeAdded", function(Name)
+			if ThemePicker:HasItem(Name) then
+				ThemePicker:RemoveItem(Name)
+			end
+			ThemePicker:AddItem(ThemeItem(Name))
+			if self.PendingTheme == Name then
+				self.PendingTheme = nil
+				LibraryObject:SetTheme(Name)
+				self:Change("Theme", Name)
+			end
+			if LibraryObject.Theme == Name then
+				ThemePicker:SetValue(Name, true)
+			end
+		end)
+
+		if self.ThemeRemovedListener then
+			self.ThemeRemovedListener:Disconnect()
+		end
+		self.ThemeRemovedListener = LibraryObject:On("ThemeRemoved", function(Name)
+			ThemePicker:RemoveItem(Name)
+			if Settings.Theme == Name then
+				Settings.Theme = LibraryObject.Theme
+				self:SaveSettings()
+			end
+			ThemePicker:SetValue(LibraryObject.Theme, true)
+		end)
+
+		if self.FontListener then
+			self.FontListener:Disconnect()
+		end
+		self.FontListener = LibraryObject:On("FontAdded", function(Name, Family)
+			if FontPicker:HasItem(Name) then
+				FontPicker:RemoveItem(Name)
+			end
+			FontPicker:AddItem(FontItem(Family))
+			if self.PendingFont == Name then
+				self.PendingFont = nil
+				LibraryObject:SetAppFont(Name)
+				self:Change("AppFont", Name)
+			end
+			if LibraryObject.AppFont == Name then
+				FontPicker:SetValue(Name, true)
+			end
+		end)
+
+		if self.FontRemovedListener then
+			self.FontRemovedListener:Disconnect()
+		end
+		self.FontRemovedListener = LibraryObject:On("FontRemoved", function(Name)
+			FontPicker:RemoveItem(Name)
+			if Settings.AppFont == Name then
+				Settings.AppFont = LibraryObject.AppFont
+				self:SaveSettings()
+			end
+			FontPicker:SetValue(LibraryObject.AppFont, true)
+		end)
 
 		if LibraryObject.UseAcrylic then
 			Section:AddToggle("InterfaceAcrylic", {
@@ -29056,6 +32035,7 @@ local InterfaceManager = {} do
 			local Card = {
 				Id = "custom:" .. Item.id,
 				Title = Item.name or "Image",
+				DeleteTitle = "Delete Background",
 				OnDelete = function()
 					BackgroundManager:Remove(Item.id)
 					Picker:RemoveItem("custom:" .. Item.id)
@@ -29195,6 +32175,13 @@ local InterfaceManager = {} do
 			ButtonText = "Open",
 			Callback = OpenTutorial,
 		})
+
+		local ThemeSection = Section:AddGroup({
+			Title = "Theme Backgrounds",
+			Icon = "rbxassetid://7072717759",
+			AutoSpace = true,
+		})
+		ThemeSection:SetVisible(false)
 
 		local SourceInput = Section:AddInput("InterfaceBgSource", {
 			Title = "Background source",
@@ -29346,6 +32333,114 @@ local InterfaceManager = {} do
 		}, "OffsetY", 1, Position)
 
 		table.insert(BackgroundManager.Hooks, ApplyMotionNames)
+
+		local SliderKeys = {
+			InterfaceBgPanelOpacity = { "PanelOpacity", 100 },
+			InterfaceBgStrength = { "Strength", 100 },
+			InterfaceBgBlur = { "Blur", 1 },
+			InterfaceBgSaturation = { "Saturation", 100 },
+			InterfaceBgZoom = { "Zoom", 100 },
+			InterfaceBgOffsetX = { "OffsetX", 1 },
+			InterfaceBgOffsetY = { "OffsetY", 1 },
+		}
+
+		local function SyncFromManager()
+			local Was = Ready
+			Ready = false
+			for Idx, Map in next, SliderKeys do
+				local Option = LibraryObject.Options[Idx]
+				if Option then
+					Option:SetValue(math.floor(BackgroundManager[Map[1]] * Map[2] + 0.5))
+				end
+			end
+			local ScopeOption = LibraryObject.Options.InterfaceBgScope
+			if ScopeOption then
+				ScopeOption:SetValue(BackgroundManager.Scope)
+			end
+			local FitOption = LibraryObject.Options.InterfaceBgFit
+			if FitOption and FitTypes[BackgroundManager.Fit] then
+				FitOption:SetValue(BackgroundManager.Fit)
+			end
+			local Active = BackgroundManager.Active
+			if Picker.Value ~= Active and (Active == "none" or Picker:HasItem(Active)) then
+				Picker:SetValue(Active, true)
+			end
+			Ready = Was
+			UpdateVisibility()
+		end
+
+		table.insert(BackgroundManager.Hooks, function()
+			if BackgroundManager.SyncRequest then
+				BackgroundManager.SyncRequest = false
+				SyncFromManager()
+			end
+		end)
+
+		if self.BackgroundListener then
+			self.BackgroundListener:Disconnect()
+		end
+		self.BackgroundListener = LibraryObject:On("BackgroundAdded", function(Item)
+			if not Picker:HasItem("custom:" .. Item.id) then
+				Picker:AddItem(CustomItem(Item))
+			end
+		end)
+
+		self.ThemeBackgroundToggles = {}
+		local Toggles = self.ThemeBackgroundToggles
+		local ToggleCount = 0
+
+		local function RefreshThemeSection()
+			ThemeSection:SetVisible(next(Toggles) ~= nil)
+		end
+
+		local function RemoveThemeToggle(Name)
+			local Option = Toggles[Name]
+			if Option then
+				Toggles[Name] = nil
+				pcall(function()
+					Option:Destroy()
+				end)
+			end
+			RefreshThemeSection()
+		end
+
+		local function AddThemeToggle(Name)
+			if Toggles[Name] then
+				return
+			end
+			ToggleCount += 1
+			Toggles[Name] = ThemeSection:AddToggle("InterfaceThemeBackground" .. ToggleCount, {
+				Title = Name,
+				Description = "Disable the built-in background of this theme",
+				Icon = "rbxassetid://7072717759",
+				IconColor = Color3.fromRGB(255, 159, 10),
+				Default = self:IsThemeBackgroundDisabled(Name),
+				Callback = function(Value)
+					self:SetThemeBackgroundDisabled(Name, Value)
+				end,
+			})
+			RefreshThemeSection()
+		end
+
+		for _, Name in next, LibraryObject:GetThemesWithBackground() do
+			AddThemeToggle(Name)
+		end
+
+		if self.ThemeBackgroundAdded then
+			self.ThemeBackgroundAdded:Disconnect()
+		end
+		self.ThemeBackgroundAdded = LibraryObject:On("ThemeAdded", function(Name)
+			if LibraryObject:GetThemeBackground(Name) then
+				AddThemeToggle(Name)
+			else
+				RemoveThemeToggle(Name)
+			end
+		end)
+
+		if self.ThemeBackgroundRemoved then
+			self.ThemeBackgroundRemoved:Disconnect()
+		end
+		self.ThemeBackgroundRemoved = LibraryObject:On("ThemeRemoved", RemoveThemeToggle)
 
 		Ready = true
 		UpdateVisibility()
@@ -29531,6 +32626,20 @@ local InterfaceManager = {} do
 			end,
 		})
 
+		Layout:AddDropdown("InterfaceGradientPickerStyle", {
+			Title = "Gradient picker",
+			Description = "Gradient picker style",
+			Icon = "rbxassetid://10734922497",
+			IconColor = Color3.fromRGB(94, 92, 230),
+			Variant = "Segmented",
+			Values = LibraryObject.GradientPickerStyles,
+			Default = Settings.GradientPickerStyle,
+			Callback = function(Value)
+				LibraryObject:SetGradientPickerStyle(Value)
+				self:Change("GradientPickerStyle", Value)
+			end,
+		})
+
 		Layout:AddDropdown("InterfaceHoverStyle", {
 			Title = "Hover style",
 			Description = "How rows react to hover",
@@ -29689,7 +32798,7 @@ local InterfaceManager = {} do
 							Variant = "Danger",
 							Callback = function()
 								for Key, Value in next, self.Defaults do
-									if Key ~= "MenuKeybind" then
+									if Key ~= "MenuKeybind" and Key ~= "CustomThemes" then
 										if type(Value) == "table" then
 											Value = HttpService:JSONDecode(HttpService:JSONEncode(Value))
 										end
@@ -29720,6 +32829,7 @@ local InterfaceManager = {} do
 		Config = Config or {}
 		self:ResolveDefaults()
 		self:LoadSettings()
+		self:SyncCustomThemes()
 		self:ApplySettings()
 
 		local Header = Window:AddTabInHeader({
@@ -29748,6 +32858,7 @@ local InterfaceManager = {} do
 		assert(self.Library, "Must set InterfaceManager.Library")
 		self:ResolveDefaults()
 		self:LoadSettings()
+		self:SyncCustomThemes()
 		self:ApplySettings()
 		self:BuildThemeSection(Tab)
 		self:BuildBackgroundSection(Tab)
@@ -29822,6 +32933,21 @@ local SaveManager = {} do
 			Load = function(Idx, Data)
 				if SaveManager.Options[Idx] then
 					SaveManager.Options[Idx]:SetValueRGB(Color3.fromHex(Data.Value), Data.Transparency)
+				end
+			end,
+		},
+		GradientPicker = {
+			Save = function(Idx, Object)
+				return {
+					Type = "GradientPicker",
+					Idx = Idx,
+					Stops = Object:Serialize(),
+					Rotation = Object.Rotation,
+				}
+			end,
+			Load = function(Idx, Data)
+				if SaveManager.Options[Idx] then
+					SaveManager.Options[Idx]:Deserialize(Data.Stops, Data.Rotation)
 				end
 			end,
 		},
@@ -32107,12 +35233,2345 @@ do
 	end
 end
 
--- This is the most important thing to return all built-in managers 
+local LocalizationManager = (function()
+	type LanguageInfo = { Code: string, Name: string, Color: Color3? }
+	type TranslationMap = { [string]: string }
+	type MessageSet = { Title: string, Start: string, Done: string, Fail: string }
+	type TextRecord = {
+		Object: any,
+		Property: string,
+		Source: string,
+		Key: string?,
+		Expected: string?,
+		Produced: { [string]: boolean }?,
+		NoTranslate: boolean?,
+		Connections: { any },
+	}
+	type BatchItem = { Source: string, Text: string, Tags: { string } }
+	type Slicer = (number?) -> boolean
+
+
+	local HttpService: HttpService = game:GetService("HttpService")
+
+	local Languages: { LanguageInfo } = {
+		{ Code = "en", Name = "English" }, { Code = "vi", Name = "Tiếng Việt" },
+		{ Code = "zh-cn", Name = "简体中文" }, { Code = "zh-tw", Name = "繁體中文" },
+		{ Code = "ja", Name = "日本語" }, { Code = "ko", Name = "한국어" },
+		{ Code = "th", Name = "ไทย" }, { Code = "id", Name = "Bahasa Indonesia" },
+		{ Code = "ms", Name = "Bahasa Melayu" }, { Code = "fil", Name = "Filipino" },
+		{ Code = "fr", Name = "Français" }, { Code = "de", Name = "Deutsch" },
+		{ Code = "es", Name = "Español" }, { Code = "pt", Name = "Português" },
+		{ Code = "it", Name = "Italiano" }, { Code = "nl", Name = "Nederlands" },
+		{ Code = "pl", Name = "Polski" }, { Code = "ru", Name = "Русский" },
+		{ Code = "uk", Name = "Українська" }, { Code = "tr", Name = "Türkçe" },
+		{ Code = "ar", Name = "العربية" }, { Code = "hi", Name = "हिन्दी" },
+		{ Code = "bn", Name = "Bangla" }, { Code = "ur", Name = "اردو" },
+		{ Code = "fa", Name = "فارسی" }, { Code = "he", Name = "עברית" },
+		{ Code = "el", Name = "Ελληνικά" }, { Code = "ro", Name = "Română" },
+		{ Code = "sv", Name = "Svenska" }, { Code = "da", Name = "Dansk" },
+		{ Code = "jv", Name = "Basa Jawa" }, { Code = "su", Name = "Basa Sunda" },
+		{ Code = "ceb", Name = "Cebuano" }, { Code = "km", Name = "Khmer" },
+		{ Code = "lo", Name = "Lao" }, { Code = "my", Name = "Burmese" },
+		{ Code = "ta", Name = "Tamil" }, { Code = "te", Name = "Telugu" },
+		{ Code = "mr", Name = "मराठी" }, { Code = "gu", Name = "Gujarati" },
+		{ Code = "kn", Name = "Kannada" }, { Code = "ml", Name = "Malayalam" },
+		{ Code = "pa", Name = "Punjabi" }, { Code = "ne", Name = "नेपाली" },
+		{ Code = "si", Name = "Sinhala" }, { Code = "ps", Name = "Pashto" },
+		{ Code = "mn", Name = "Монгол" }, { Code = "kk", Name = "Қазақша" },
+		{ Code = "uz", Name = "O'zbekcha" }, { Code = "az", Name = "Azərbaycanca" },
+		{ Code = "ka", Name = "Georgian" }, { Code = "hy", Name = "Armenian" },
+		{ Code = "cs", Name = "Čeština" }, { Code = "sk", Name = "Slovenčina" },
+		{ Code = "hu", Name = "Magyar" }, { Code = "bg", Name = "Български" },
+		{ Code = "sr", Name = "Српски" }, { Code = "hr", Name = "Hrvatski" },
+		{ Code = "bs", Name = "Bosanski" }, { Code = "sl", Name = "Slovenščina" },
+		{ Code = "mk", Name = "Македонски" }, { Code = "sq", Name = "Shqip" },
+		{ Code = "lt", Name = "Lietuvių" }, { Code = "lv", Name = "Latviešu" },
+		{ Code = "et", Name = "Eesti" }, { Code = "fi", Name = "Suomi" },
+		{ Code = "no", Name = "Norsk" }, { Code = "is", Name = "Íslenska" },
+		{ Code = "ca", Name = "Català" }, { Code = "eu", Name = "Euskara" },
+		{ Code = "gl", Name = "Galego" }, { Code = "ga", Name = "Gaeilge" },
+		{ Code = "cy", Name = "Cymraeg" }, { Code = "mt", Name = "Malti" },
+		{ Code = "af", Name = "Afrikaans" }, { Code = "sw", Name = "Kiswahili" },
+		{ Code = "zu", Name = "isiZulu" }, { Code = "yo", Name = "Yorùbá" },
+		{ Code = "ha", Name = "Hausa" }, { Code = "am", Name = "Amharic" },
+		{ Code = "so", Name = "Soomaali" }, { Code = "eo", Name = "Esperanto" },
+	}
+
+
+	local FlagColors: { [string]: Color3 } = {
+		en = Color3.fromRGB(60, 100, 200),
+		vi = Color3.fromRGB(218, 37, 29),
+		["zh-cn"] = Color3.fromRGB(238, 28, 37),
+		["zh-tw"] = Color3.fromRGB(30, 80, 180),
+		ja = Color3.fromRGB(188, 0, 45),
+		ko = Color3.fromRGB(30, 100, 200),
+		th = Color3.fromRGB(165, 25, 49),
+		id = Color3.fromRGB(206, 17, 38),
+		ms = Color3.fromRGB(255, 204, 0),
+		fil = Color3.fromRGB(0, 56, 168),
+		fr = Color3.fromRGB(0, 85, 164),
+		de = Color3.fromRGB(255, 204, 0),
+		es = Color3.fromRGB(241, 191, 0),
+		pt = Color3.fromRGB(0, 150, 70),
+		it = Color3.fromRGB(0, 146, 70),
+		nl = Color3.fromRGB(174, 28, 40),
+		pl = Color3.fromRGB(220, 20, 60),
+		ru = Color3.fromRGB(0, 57, 166),
+		uk = Color3.fromRGB(255, 213, 0),
+		tr = Color3.fromRGB(227, 10, 23),
+		ar = Color3.fromRGB(0, 122, 61),
+		hi = Color3.fromRGB(255, 153, 51),
+		bn = Color3.fromRGB(0, 106, 78),
+		ur = Color3.fromRGB(0, 128, 60),
+		fa = Color3.fromRGB(35, 159, 64),
+		he = Color3.fromRGB(0, 56, 184),
+		el = Color3.fromRGB(13, 94, 175),
+		ro = Color3.fromRGB(252, 209, 22),
+		sv = Color3.fromRGB(0, 106, 167),
+		da = Color3.fromRGB(198, 12, 48),
+		jv = Color3.fromRGB(180, 40, 40),
+		su = Color3.fromRGB(190, 30, 45),
+		ceb = Color3.fromRGB(0, 56, 168),
+		km = Color3.fromRGB(3, 46, 162),
+		lo = Color3.fromRGB(206, 17, 38),
+		my = Color3.fromRGB(254, 203, 0),
+		ta = Color3.fromRGB(255, 120, 40),
+		te = Color3.fromRGB(240, 140, 30),
+		mr = Color3.fromRGB(255, 130, 30),
+		gu = Color3.fromRGB(255, 140, 40),
+		kn = Color3.fromRGB(230, 170, 20),
+		ml = Color3.fromRGB(40, 150, 90),
+		pa = Color3.fromRGB(255, 150, 20),
+		ne = Color3.fromRGB(220, 20, 60),
+		si = Color3.fromRGB(141, 21, 58),
+		ps = Color3.fromRGB(40, 40, 40),
+		mn = Color3.fromRGB(196, 30, 58),
+		kk = Color3.fromRGB(0, 175, 202),
+		uz = Color3.fromRGB(30, 181, 58),
+		az = Color3.fromRGB(0, 181, 226),
+		ka = Color3.fromRGB(230, 30, 40),
+		hy = Color3.fromRGB(217, 0, 18),
+		cs = Color3.fromRGB(215, 20, 26),
+		sk = Color3.fromRGB(11, 78, 162),
+		hu = Color3.fromRGB(71, 112, 80),
+		bg = Color3.fromRGB(0, 150, 110),
+		sr = Color3.fromRGB(198, 54, 60),
+		hr = Color3.fromRGB(23, 23, 150),
+		bs = Color3.fromRGB(0, 35, 149),
+		sl = Color3.fromRGB(0, 80, 160),
+		mk = Color3.fromRGB(216, 32, 39),
+		sq = Color3.fromRGB(224, 30, 30),
+		lt = Color3.fromRGB(253, 185, 19),
+		lv = Color3.fromRGB(158, 48, 57),
+		et = Color3.fromRGB(0, 114, 206),
+		fi = Color3.fromRGB(0, 53, 128),
+		no = Color3.fromRGB(186, 12, 47),
+		is = Color3.fromRGB(2, 82, 156),
+		ca = Color3.fromRGB(250, 190, 0),
+		eu = Color3.fromRGB(0, 140, 70),
+		gl = Color3.fromRGB(0, 120, 200),
+		ga = Color3.fromRGB(22, 155, 98),
+		cy = Color3.fromRGB(0, 140, 60),
+		mt = Color3.fromRGB(207, 20, 43),
+		af = Color3.fromRGB(0, 119, 73),
+		sw = Color3.fromRGB(30, 181, 58),
+		zu = Color3.fromRGB(0, 122, 77),
+		yo = Color3.fromRGB(0, 135, 81),
+		ha = Color3.fromRGB(0, 140, 80),
+		am = Color3.fromRGB(7, 137, 48),
+		so = Color3.fromRGB(65, 137, 221),
+		eo = Color3.fromRGB(0, 153, 51),
+	}
+
+	local GoogleLanguageCodes: { [string]: string } = { ["zh-cn"] = "zh-CN", ["zh-tw"] = "zh-TW", jv = "jw" }
+
+	local DefaultMessages: { [string]: MessageSet } = {
+		en = { Title = "Language", Start = "Translating to %s...", Done = "Translation complete (%s)", Fail = "Translation failed (%s), will retry shortly" },
+		vi = { Title = "Ngôn ngữ", Start = "Đang dịch sang %s...", Done = "Dịch thành công (%s)", Fail = "Dịch thất bại (%s), sẽ thử lại sau" },
+		zh = { Title = "语言", Start = "正在翻译为 %s...", Done = "翻译成功 (%s)", Fail = "翻译失败 (%s)，稍后重试" },
+		ja = { Title = "言語", Start = "%s に翻訳中...", Done = "翻訳が完了しました (%s)", Fail = "翻訳に失敗しました (%s)。まもなく再試行します" },
+		ko = { Title = "언어", Start = "%s(으)로 번역 중...", Done = "번역 완료 (%s)", Fail = "번역 실패 (%s), 곧 다시 시도합니다" },
+		id = { Title = "Bahasa", Start = "Menerjemahkan ke %s...", Done = "Terjemahan selesai (%s)", Fail = "Terjemahan gagal (%s), akan dicoba lagi" },
+		ms = { Title = "Bahasa", Start = "Menterjemah ke %s...", Done = "Terjemahan selesai (%s)", Fail = "Terjemahan gagal (%s), akan dicuba lagi" },
+		jv = { Title = "Basa", Start = "Nerjemahaké menyang %s...", Done = "Terjemahan rampung (%s)", Fail = "Terjemahan gagal (%s), bakal dicoba maneh" },
+		su = { Title = "Basa", Start = "Nerjemahkeun ka %s...", Done = "Tarjamahan réngsé (%s)", Fail = "Tarjamahan gagal (%s), bakal dicoba deui" },
+		fil = { Title = "Wika", Start = "Isinasalin sa %s...", Done = "Natapos ang pagsasalin (%s)", Fail = "Nabigo ang pagsasalin (%s), susubukan muli" },
+		fr = { Title = "Langue", Start = "Traduction en %s...", Done = "Traduction terminée (%s)", Fail = "Échec de la traduction (%s), nouvel essai bientôt" },
+		de = { Title = "Sprache", Start = "Übersetze nach %s...", Done = "Übersetzung abgeschlossen (%s)", Fail = "Übersetzung fehlgeschlagen (%s), neuer Versuch folgt" },
+		es = { Title = "Idioma", Start = "Traduciendo a %s...", Done = "Traducción completada (%s)", Fail = "Error de traducción (%s), se reintentará" },
+		pt = { Title = "Idioma", Start = "Traduzindo para %s...", Done = "Tradução concluída (%s)", Fail = "Falha na tradução (%s), tentando novamente" },
+		it = { Title = "Lingua", Start = "Traduzione in %s...", Done = "Traduzione completata (%s)", Fail = "Traduzione non riuscita (%s), nuovo tentativo a breve" },
+		nl = { Title = "Taal", Start = "Vertalen naar %s...", Done = "Vertaling voltooid (%s)", Fail = "Vertaling mislukt (%s), nieuwe poging volgt" },
+		pl = { Title = "Język", Start = "Tłumaczenie na %s...", Done = "Tłumaczenie zakończone (%s)", Fail = "Tłumaczenie nie powiodło się (%s), ponowna próba wkrótce" },
+		cs = { Title = "Jazyk", Start = "Překlad do %s...", Done = "Překlad dokončen (%s)", Fail = "Překlad se nezdařil (%s), brzy to zkusíme znovu" },
+		sv = { Title = "Språk", Start = "Översätter till %s...", Done = "Översättningen klar (%s)", Fail = "Översättningen misslyckades (%s), försöker igen snart" },
+		tr = { Title = "Dil", Start = "%s diline çevriliyor...", Done = "Çeviri tamamlandı (%s)", Fail = "Çeviri başarısız (%s), yakında yeniden denenecek" },
+		ru = { Title = "Язык", Start = "Перевод на %s...", Done = "Перевод завершён (%s)", Fail = "Ошибка перевода (%s), повтор позже" },
+		uk = { Title = "Мова", Start = "Переклад на %s...", Done = "Переклад завершено (%s)", Fail = "Помилка перекладу (%s), повторна спроба згодом" },
+		ar = { Title = "اللغة", Start = "جارٍ الترجمة إلى %s...", Done = "اكتملت الترجمة (%s)", Fail = "فشلت الترجمة (%s)، ستتم إعادة المحاولة قريبًا" },
+		hi = { Title = "भाषा", Start = "%s में अनुवाद हो रहा है...", Done = "अनुवाद पूरा हुआ (%s)", Fail = "अनुवाद विफल (%s), जल्द ही पुनः प्रयास होगा" },
+		th = { Title = "ภาษา", Start = "กำลังแปลเป็น %s...", Done = "แปลเสร็จสิ้น (%s)", Fail = "แปลไม่สำเร็จ (%s) จะลองใหม่เร็วๆ นี้" },
+	}
+
+	local NoTranslateKeys: { [string]: boolean } = {
+		notranslations = true,
+		notranslation = true,
+		notranslate = true,
+		donottranslate = true,
+	}
+
+	local function CopyTable(Source: { [any]: any }?): { [any]: any }
+		local Result = {}
+		for Key, Value in pairs(Source or {}) do
+			Result[Key] = Value
+		end
+		return Result
+	end
+
+	local function CreateSlicer(Budget: number): Slicer
+		local StartedAt = os.clock()
+		return function(Limit: number?): boolean
+			if os.clock() - StartedAt >= (Limit or Budget) then
+				task.wait()
+				StartedAt = os.clock()
+				return true
+			end
+			return false
+		end
+	end
+
+	local function IsObjectShown(Node: any, Memo: { [any]: boolean }): boolean
+		if Node == nil then
+			return false
+		end
+		local Known = Memo[Node]
+		if Known ~= nil then
+			return Known
+		end
+		local Shown = true
+		if Node:IsA("GuiObject") then
+			Shown = Node.Visible
+		elseif Node:IsA("LayerCollector") then
+			Shown = Node.Enabled
+		end
+		if Shown then
+			local Parent = Node.Parent
+			if Parent == nil then
+				Shown = false
+			elseif Parent ~= game then
+				Shown = IsObjectShown(Parent, Memo)
+			end
+		end
+		Memo[Node] = Shown
+		return Shown
+	end
+
+	local function IsTextObject(Object: any): boolean
+		return Object:IsA("TextLabel") or Object:IsA("TextButton") or Object:IsA("TextBox")
+	end
+
+	local function CreateLocalizationEngine(Library: any)
+		local Internals = Library.Internals
+		local MarqueeEntries = Internals and Internals.Creator and Internals.Creator.Marquees
+
+		local LocalizationEngine = {
+			Records = {},
+			Cache = {},
+			Failed = {},
+			Listeners = {},
+			Dropdowns = {},
+			Marquees = MarqueeEntries,
+			Active = false,
+			Dead = false,
+			Scheduled = false,
+			Busy = false,
+			Pending = false,
+			SaveScheduled = false,
+			RetryScheduled = false,
+			Held = false,
+			Committing = false,
+			CommitAgain = false,
+			CommitQueued = false,
+			Epoch = 0,
+			HoldToken = 0,
+			SaveDirtyAt = 0,
+			NextSlot = 0,
+			FailCount = 0,
+			GoodHostIndex = 1,
+			CurrentLanguage = "en",
+			DisplayLanguage = "en",
+			SourceLanguage = "en",
+			Prefix = "loc:",
+			SourceSignature = "",
+			MissingSources = {},
+		}
+
+		function LocalizationEngine:NormalizeCode(Code: any): string?
+			if type(Code) ~= "string" then
+				return nil
+			end
+			local Normalized = Code:lower():gsub("_", "-")
+			if #Normalized < 2 or #Normalized > 24 or not Normalized:match("^[a-z]+[a-z%-]*$") then
+				return nil
+			end
+			return Normalized
+		end
+
+		function LocalizationEngine:ReportError(Message: any)
+			self.LastError = tostring(Message)
+			pcall(function()
+				Library:Toast({ Text = self.LastError, Type = "Warning", Duration = 4 })
+			end)
+			local Config = self.Config
+			if Config and type(Config.OnError) == "function" then
+				local Callback, Detail = Config.OnError, self.LastError
+				task.defer(function()
+					pcall(Callback, Detail)
+				end)
+			end
+		end
+
+		function LocalizationEngine:IsMarqueeMirror(Object: any): boolean
+			local Entries = self.Marquees
+			if not Entries then
+				return false
+			end
+			local Clip = Object.Parent
+			local Label = Clip and Clip.Parent
+			local Entry = Label and Entries[Label]
+			return Entry ~= nil and Entry.Text == Object
+		end
+
+		function LocalizationEngine:IsIgnored(Record: TextRecord): boolean
+			local Object = Record.Object
+			return not self.Config.Enabled
+				or Record.NoTranslate == true
+				or Object:GetAttribute("ModulesNoTranslate") == true
+				or self:IsMarqueeMirror(Object)
+				or (Record.Property == "Text" and Object:IsA("TextBox"))
+		end
+
+		function LocalizationEngine:GetFallback(Source: string): string
+			local Defaults = self.Config.Translations[self.Config.SourceLanguage]
+			if type(Defaults) == "table" and type(Defaults[Source]) == "string" then
+				return Defaults[Source]
+			end
+			return Source
+		end
+
+		function LocalizationEngine:SplitDictionary(Entries: { [any]: any }, ProtectedSet: { [string]: boolean }): { [any]: any }
+			local Clean = {}
+			for Key, Value in pairs(Entries) do
+				if type(Key) == "string" and NoTranslateKeys[(Key:lower():gsub("[%s_%-]", ""))] then
+					if type(Value) == "string" then
+						ProtectedSet[Value] = true
+					elseif type(Value) == "table" then
+						for _, Item in pairs(Value) do
+							if type(Item) == "string" then
+								ProtectedSet[Item] = true
+							end
+						end
+					end
+				else
+					Clean[Key] = Value
+				end
+			end
+			return Clean
+		end
+
+		function LocalizationEngine:BuildTerms()
+			local Terms: { string } = {}
+			for Term in pairs(self.Config.NoTranslate) do
+				if Term ~= "" then
+					table.insert(Terms, Term)
+				end
+			end
+			table.sort(Terms, function(Left: string, Right: string): boolean
+				if #Left ~= #Right then
+					return #Left > #Right
+				end
+				return Left < Right
+			end)
+			self.Config.NoTranslateList = Terms
+		end
+
+		function LocalizationEngine:GetNoTranslateKey(): string
+			return table.concat(self.Config.NoTranslateList, "\n") .. "\n" .. self.SourceSignature
+		end
+
+		function LocalizationEngine:HasProtectedTerm(Text: string): boolean
+			for _, Term in ipairs(self.Config.NoTranslateList) do
+				if Text:find(Term, 1, true) then
+					return true
+				end
+			end
+			return false
+		end
+
+		function LocalizationEngine:MaskProtected(Text: string, Make: (string) -> string): string
+			for _, Term in ipairs(self.Config.NoTranslateList) do
+				local Pieces, Cursor = {}, 1
+				while true do
+					local First, Last = Text:find(Term, Cursor, true)
+					if not First then
+						break
+					end
+					table.insert(Pieces, Text:sub(Cursor, First - 1))
+					table.insert(Pieces, Make(Term))
+					Cursor = Last + 1
+				end
+				if Cursor > 1 then
+					table.insert(Pieces, Text:sub(Cursor))
+					Text = table.concat(Pieces)
+				end
+			end
+			return Text
+		end
+
+		function LocalizationEngine:Templatize(Source: any): (any, { string }?)
+			if type(Source) ~= "string" or not Source:find("%d") then
+				return Source, nil
+			end
+			if Source:find("{n%d+}") or not Source:match("[%a\128-\255]") then
+				return Source, nil
+			end
+			local Numbers: { string } = {}
+			local Template = Source:gsub("%d[%d%.,]*", function(Match: string): string
+				local Core = Match:match("^(.-)[%.,]*$")
+				local Tail = Match:sub(#Core + 1)
+				Numbers[#Numbers + 1] = Core
+				return "{n" .. #Numbers .. "}" .. Tail
+			end)
+			return Template, Numbers
+		end
+
+		function LocalizationEngine:FillNumbers(Text: string, Numbers: { string }): string
+			return (Text:gsub("{n(%d+)}", function(IndexText: string): string
+				return Numbers[tonumber(IndexText)]
+			end))
+		end
+
+		function LocalizationEngine:Lookup(Source: string, Language: string): (string, boolean)
+			if self.Config.NoTranslate[Source] or self.Config.NoTranslateExact[Source] then
+				return Source, true
+			end
+			local Entries = self.Config.Translations[Language]
+			if type(Entries) == "table" and type(Entries[Source]) == "string" then
+				return Entries[Source], true
+			end
+			if Language == self.Config.SourceLanguage or not Source:match("[%a\128-\255]") then
+				return Source, true
+			end
+			if self.Config.AutoTranslate then
+				local Cache = self.Cache[Language]
+				local Key, Numbers = self:Templatize(Source)
+				local Cached = Cache and Cache[Key]
+				if type(Cached) == "string" then
+					return Numbers and self:FillNumbers(Cached, Numbers) or Cached, true
+				end
+			end
+			return self:GetFallback(Source), false
+		end
+
+		function LocalizationEngine:NeedsTranslation(Source: string, Language: string): boolean
+			if not self.Active or not self.Config.AutoTranslate or Source == "" then
+				return false
+			end
+			if self.MissingSources[Source] or not Source:match("[%a\128-\255]") then
+				return false
+			end
+			local _, Found = self:Lookup(Source, Language)
+			if Found then
+				return false
+			end
+			local FailedSources = self.Failed[Language]
+			return not (FailedSources and FailedSources[Source] and FailedSources[Source] > os.clock())
+		end
+
+		function LocalizationEngine:Resolve(Record: TextRecord, Language: string): string
+			if not self.Active or self:IsIgnored(Record) then
+				return Record.Source
+			end
+			if Record.Key then
+				local Keyed = self.Config.Translations[Language]
+				if type(Keyed) == "table" and type(Keyed[Record.Key]) == "string" then
+					return Keyed[Record.Key]
+				end
+			end
+			return (self:Lookup(Record.Source, Language))
+		end
+
+		function LocalizationEngine:WriteRecord(Record: TextRecord, Value: string)
+			Record.Expected = Value
+			if Value ~= Record.Source then
+				Record.Produced = Record.Produced or {}
+				Record.Produced[Value] = true
+			end
+			local Object = Record.Object
+			if Object.Parent ~= nil and Object[Record.Property] ~= Value then
+				Object[Record.Property] = Value
+			end
+		end
+
+		function LocalizationEngine:ApplyRecord(Record: TextRecord)
+			if self.Dead then
+				return
+			end
+			self:WriteRecord(Record, self:Resolve(Record, self.DisplayLanguage))
+		end
+
+		function LocalizationEngine:CommitPass()
+			local Language = self.DisplayLanguage
+			local Slice = CreateSlicer(self.Config.FrameBudget)
+			local function IsStale(): boolean
+				return self.Dead or self.DisplayLanguage ~= Language
+			end
+
+			local List: { TextRecord } = {}
+			for _, Properties in pairs(self.Records) do
+				for _, Record in pairs(Properties) do
+					table.insert(List, Record)
+				end
+			end
+
+			local Memo = {}
+			local Shown: { TextRecord }, Hidden: { TextRecord } = {}, {}
+			for Index = 1, #List do
+				local Record = List[Index]
+				if IsObjectShown(Record.Object, Memo) then
+					table.insert(Shown, Record)
+				else
+					table.insert(Hidden, Record)
+				end
+				if Slice() and IsStale() then
+					return
+				end
+			end
+			for _, Group in ipairs({ Shown, Hidden }) do
+				for Index = 1, #Group do
+					local Record = Group[Index]
+					local Properties = self.Records[Record.Object]
+					if Properties and Properties[Record.Property] == Record then
+						self:ApplyRecord(Record)
+					end
+					if Slice() and IsStale() then
+						return
+					end
+				end
+			end
+		end
+
+		function LocalizationEngine:Commit()
+			if self.Dead then
+				return
+			end
+			if self.Committing then
+				self.CommitAgain = true
+				return
+			end
+			self.Committing = true
+			task.spawn(function()
+				local Success, Problem = pcall(function()
+					repeat
+						self.CommitAgain = false
+						self:CommitPass()
+					until not self.CommitAgain or self.Dead
+				end)
+				self.Committing = false
+				if not Success then
+					self:ReportError(Problem)
+				end
+			end)
+		end
+
+		function LocalizationEngine:CommitSoon()
+			if self.CommitQueued or self.Dead then
+				return
+			end
+			self.CommitQueued = true
+			task.delay(0.1, function()
+				self.CommitQueued = false
+				self:Commit()
+			end)
+		end
+
+		function LocalizationEngine:ReleaseHold()
+			if not self.Held then
+				return
+			end
+			self.Held = false
+			self.HoldToken += 1
+			self.DisplayLanguage = self.CurrentLanguage
+			self:Commit()
+		end
+
+		function LocalizationEngine:Hold()
+			self.Held = true
+			self.HoldToken += 1
+			local Token = self.HoldToken
+			task.delay(self.Config.SwapTimeout, function()
+				if self.HoldToken == Token and self.Held then
+					self:ReleaseHold()
+				end
+			end)
+			self:Schedule(0)
+		end
+
+		function LocalizationEngine:ParseSource(Raw: any): (string, string?)
+			if type(Raw) ~= "string" then
+				return tostring(Raw or ""), nil
+			end
+			local Prefix = self.Prefix
+			if Raw:sub(1, #Prefix) == Prefix then
+				local Key = Raw:sub(#Prefix + 1)
+				local Defaults = self.Config.Translations[self.SourceLanguage] or {}
+				if type(Defaults[Key]) ~= "string" then
+					local Fallback = "[" .. Key .. "]"
+					self.MissingSources[Fallback] = true
+					return Fallback, Key
+				end
+				return Defaults[Key], Key
+			end
+			return Raw, nil
+		end
+
+		function LocalizationEngine:Untrack(Object: any)
+			local Properties = self.Records[Object]
+			if not Properties then
+				return
+			end
+			self.Records[Object] = nil
+			for _, Record in pairs(Properties) do
+				for _, Connection in ipairs(Record.Connections) do
+					Connection:Disconnect()
+				end
+			end
+		end
+
+		function LocalizationEngine:Track(Object: any)
+			if self.Dead or self.Records[Object] or not self.Config then
+				return
+			end
+			if not IsTextObject(Object) or self:IsMarqueeMirror(Object) then
+				return
+			end
+			local Properties = {}
+			self.Records[Object] = Properties
+			local Property = Object:IsA("TextBox") and "PlaceholderText" or "Text"
+			local Source, Key = self:ParseSource(Object[Property])
+			local Record: TextRecord = {
+				Object = Object,
+				Property = Property,
+				Source = Source,
+				Key = Key,
+				Connections = {},
+			}
+			Properties[Property] = Record
+			self:ApplyRecord(Record)
+
+			table.insert(Record.Connections, Object:GetPropertyChangedSignal(Property):Connect(function()
+				local Current = Object[Property]
+				if Current == Record.Expected then
+					return
+				end
+				if Record.Produced and Record.Produced[Current] and Current ~= Record.Source then
+					self:ApplyRecord(Record)
+					return
+				end
+				Record.Source, Record.Key = self:ParseSource(Current)
+				self:ApplyRecord(Record)
+				self:Schedule()
+				self:ScheduleSave()
+			end))
+			table.insert(Record.Connections, Object:GetAttributeChangedSignal("ModulesNoTranslate"):Connect(function()
+				self:ApplyRecord(Record)
+			end))
+			table.insert(Record.Connections, Object.Destroying:Connect(function()
+				self:Untrack(Object)
+			end))
+			self:Schedule()
+		end
+
+		function LocalizationEngine:CollectSources(Slice: Slicer?): ({ string }, { [string]: boolean })
+			local Result: { string }, Seen: { [string]: boolean } = {}, {}
+			for _, Properties in pairs(self.Records) do
+				for _, Record in pairs(Properties) do
+					if not self:IsIgnored(Record) then
+						local Template = self:Templatize(Record.Source)
+						if not Seen[Template] then
+							Seen[Template] = true
+							Result[#Result + 1] = Template
+						end
+					end
+					if Slice then
+						Slice()
+					end
+				end
+			end
+			table.sort(Result)
+			return Result, Seen
+		end
+
+		function LocalizationEngine:ReadCacheFile(): string?
+			if not self.Config.Cache or type(readfile) ~= "function" then
+				return nil
+			end
+			local Success, Content = pcall(readfile, self.Config.CacheFile)
+			if not Success then
+				return nil
+			end
+			local Decoded, Data = pcall(function()
+				return HttpService:JSONDecode(Content)
+			end)
+			if not Decoded or type(Data) ~= "table" or Data.Version ~= 1
+				or Data.SourceLanguage ~= self.Config.SourceLanguage
+				or Data.SourceSignature ~= self.SourceSignature then
+				return nil
+			end
+			local StaleTerms = Data.NoTranslateKey ~= self:GetNoTranslateKey()
+			if type(Data.Translations) == "table" then
+				for Code, Entries in pairs(Data.Translations) do
+					local Normalized = self:NormalizeCode(Code)
+					if Normalized and Normalized ~= self.Config.SourceLanguage and type(Entries) == "table" then
+						self.Cache[Normalized] = self.Cache[Normalized] or {}
+						for Source, Value in pairs(Entries) do
+							if type(Source) == "string" and type(Value) == "string" and not (StaleTerms and self:HasProtectedTerm(Source)) then
+								self.Cache[Normalized][Source] = Value
+							end
+						end
+					end
+				end
+			end
+			return self:NormalizeCode(Data.SelectedLanguage)
+		end
+
+		function LocalizationEngine:SaveCache(): boolean
+			if not self.Active or not self.Config.Cache or type(writefile) ~= "function" then
+				return false
+			end
+			local Success, Problem = pcall(function()
+				local Folder = self.Config.CacheFile:match("^(.*)/[^/]+$")
+				if Folder and type(makefolder) == "function" then
+					local Path = ""
+					for Piece in Folder:gmatch("[^/]+") do
+						Path = Path == "" and Piece or Path .. "/" .. Piece
+						if type(isfolder) ~= "function" or not isfolder(Path) then
+							pcall(makefolder, Path)
+						end
+					end
+				end
+				local _, Live = self:CollectSources()
+				if self.Config.AutoPruneCache then
+					for _, Entries in pairs(self.Cache) do
+						for Source in pairs(Entries) do
+							if not Live[Source] then
+								Entries[Source] = nil
+							end
+						end
+					end
+				end
+				writefile(self.Config.CacheFile, HttpService:JSONEncode({
+					Version = 1,
+					SourceLanguage = self.Config.SourceLanguage,
+					SourceSignature = self.SourceSignature,
+					NoTranslateKey = self:GetNoTranslateKey(),
+					SelectedLanguage = self.Config.SaveSelection and self.CurrentLanguage or nil,
+					Translations = self.Cache,
+				}))
+			end)
+			if not Success then
+				self:ReportError("Cannot save cache: " .. tostring(Problem))
+			end
+			return Success
+		end
+
+		function LocalizationEngine:ScheduleSave()
+			if not self.Active or self.Dead then
+				return
+			end
+			self.SaveDirtyAt = os.clock()
+			if self.SaveScheduled then
+				return
+			end
+			self.SaveScheduled = true
+			local function Attempt()
+				if self.Dead then
+					self.SaveScheduled = false
+					return
+				end
+				if self.Held or self.Committing or os.clock() - self.SaveDirtyAt < self.Config.SaveDelay then
+					task.delay(0.5, Attempt)
+					return
+				end
+				self.SaveScheduled = false
+				self:SaveCache()
+			end
+			task.delay(self.Config.SaveDelay, Attempt)
+		end
+
+		function LocalizationEngine:SendHttpRequest(Url: string): any
+			if type(self.Config.Request) == "function" then
+				return self.Config.Request({ Url = Url, Method = "GET", Timeout = 15 })
+			end
+			local Hosts = {
+				"https://translate.googleapis.com/translate_a/single",
+				"https://clients5.google.com/translate_a/single",
+				"https://translate.google.com/translate_a/single",
+			}
+			if self.GoodHostIndex > 1 then
+				table.insert(Hosts, 1, table.remove(Hosts, self.GoodHostIndex))
+			end
+			local HostIndexes = { ["translate.googleapis.com"] = 1, ["clients5.google.com"] = 2, ["translate.google.com"] = 3 }
+			local Query = Url:match("%?(.*)$") or ""
+			local Sender = request or http_request or (syn and syn.request) or (http and http.request)
+			local Problems: { string } = {}
+			for _, Host in ipairs(Hosts) do
+				local Target = Host .. "?" .. Query
+				if Host:find("clients5", 1, true) then
+					Target = Target:gsub("client=gtx", "client=dict-chrome-ex")
+				end
+				local HostName = Host:match("//([^/]+)") or Host
+				local function ViaRequest(): (string?, string?)
+					local Success, Response = pcall(Sender, { Url = Target, Method = "GET", Timeout = 15 })
+					local Status = Success and type(Response) == "table" and tonumber(Response.StatusCode or Response.Status) or 0
+					if Success and type(Response) == "table" and Status >= 200 and Status < 300 and type(Response.Body) == "string" and Response.Body:sub(1, 1) == "[" then
+						return Response.Body
+					end
+					return nil, HostName .. " request: " .. (if Success then "HTTP " .. Status else tostring(Response):sub(1, 60))
+				end
+				local function ViaHttpGet(): (string?, string?)
+					local Success, Body = pcall(function()
+						return game:HttpGet(Target)
+					end)
+					if Success and type(Body) == "string" and Body:sub(1, 1) == "[" then
+						return Body
+					end
+					return nil, HostName .. " HttpGet: " .. (if Success then "bad body" else tostring(Body):sub(1, 60))
+				end
+				local Attempts = if type(Sender) == "function" then { ViaRequest, ViaHttpGet } else { ViaHttpGet }
+				for _, Attempt in ipairs(Attempts) do
+					local Body, Problem = Attempt()
+					if Body then
+						self.GoodHostIndex = HostIndexes[HostName] or self.GoodHostIndex
+						return Body
+					end
+					table.insert(Problems, Problem or "unknown")
+				end
+			end
+			error("All endpoints failed -> " .. table.concat(Problems, " | "))
+		end
+
+		function LocalizationEngine:ProtectText(Source: string): (string?, { string }?)
+			if Source:find("ZXQ", 1, true) then
+				return nil, nil
+			end
+			local Tags: { string } = {}
+			local function Hold(Term: string): string
+				table.insert(Tags, Term)
+				return string.format("ZXQT%04dQXZ", #Tags)
+			end
+			local Text = Source:gsub("<[^>]+>", Hold)
+			for _, Pattern in ipairs({ "%%[%d%.%+%-]*[cdiouxXeEfgGqs]", "{[%w_%.]+}", "rbxassetid://%d+", "https?://[^%s<>]+" }) do
+				Text = Text:gsub(Pattern, Hold)
+			end
+			Text = self:MaskProtected(Text, Hold)
+			return Text, Tags
+		end
+
+		function LocalizationEngine:RestoreText(Value: string, Tags: { string }): string?
+			local Seen, Invalid = {}, false
+			Value = Value:gsub("ZXQT(%d+)QXZ", function(IndexText: string): string
+				local Position = tonumber(IndexText)
+				if not Tags[Position] or Seen[Position] then
+					Invalid = true
+					return ""
+				end
+				Seen[Position] = true
+				return Tags[Position]
+			end)
+			for Position in ipairs(Tags) do
+				if not Seen[Position] then
+					return nil
+				end
+			end
+			if Invalid or Value:find("ZXQ", 1, true) then
+				return nil
+			end
+			return Value
+		end
+
+		function LocalizationEngine:BuildPayload(Items: { BatchItem }): string
+			local Pieces: { string } = {}
+			for Index, Item in ipairs(Items) do
+				table.insert(Pieces, string.format("ZXQB%06dQXZ\n%s\n", Index, Item.Text))
+			end
+			table.insert(Pieces, "ZXQENDQXZ")
+			return table.concat(Pieces)
+		end
+
+		function LocalizationEngine:BuildQueryUrl(Query: string, Language: string): string
+			return "https://translate.googleapis.com/translate_a/single?client=gtx&dt=t&ie=UTF-8&oe=UTF-8&sl="
+				.. HttpService:UrlEncode(GoogleLanguageCodes[self.Config.SourceLanguage] or self.Config.SourceLanguage)
+				.. "&tl=" .. HttpService:UrlEncode(GoogleLanguageCodes[Language] or Language)
+				.. "&q=" .. HttpService:UrlEncode(Query)
+		end
+
+		function LocalizationEngine:BuildUrl(Items: { BatchItem }, Language: string): string
+			return self:BuildQueryUrl(self:BuildPayload(Items), Language)
+		end
+
+		function LocalizationEngine:DecodeResponse(Body: string, Items: { BatchItem }): { string }
+			local Data = HttpService:JSONDecode(Body)
+			if type(Data) ~= "table" or type(Data[1]) ~= "table" then
+				error("Unexpected Google JSON response")
+			end
+			local Pieces: { string } = {}
+			for _, Segment in ipairs(Data[1]) do
+				if type(Segment) == "table" and type(Segment[1]) == "string" then
+					table.insert(Pieces, Segment[1])
+				end
+			end
+			local Output, Starts, Ends, Cursor = table.concat(Pieces), {}, {}, 1
+			for Index in ipairs(Items) do
+				local Marker = string.format("ZXQB%06dQXZ", Index)
+				local First, Last = Output:find(Marker, Cursor, true)
+				if not First or Output:find(Marker, Last + 1, true) then
+					error("Batch marker missing or duplicated; source text retained")
+				end
+				if Index == 1 and Output:sub(1, First - 1):match("%S") then
+					error("Unexpected batch prefix")
+				end
+				Starts[Index], Ends[Index], Cursor = First, Last, Last + 1
+			end
+			local Finish, FinishEnd = Output:find("ZXQENDQXZ", Cursor, true)
+			if not Finish or Output:sub(FinishEnd + 1):match("%S") then
+				error("Batch end marker missing or invalid")
+			end
+			local Translated: { string } = {}
+			for Index, Item in ipairs(Items) do
+				local Value = Output:sub(Ends[Index] + 1, (Starts[Index + 1] or Finish) - 1)
+				Value = Value:match("^%s*(.-)%s*$")
+				Value = self:RestoreText(Value, Item.Tags)
+				if not Value or (Value == "" and Item.Source:match("%S")) then
+					error("Invalid protected text; source text retained")
+				end
+				Translated[Index] = (Item.Source:match("^%s*") or "") .. Value .. (Item.Source:match("%s*$") or "")
+			end
+			return Translated
+		end
+
+		function LocalizationEngine:IsFormatError(Reason: any): boolean
+			Reason = tostring(Reason)
+			return Reason:find("Batch ", 1, true) ~= nil or Reason:find("Invalid protected", 1, true) ~= nil
+				or Reason:find("Unexpected", 1, true) ~= nil or Reason:find("Empty translation", 1, true) ~= nil
+		end
+
+		function LocalizationEngine:PaceRequest()
+			local Now = os.clock()
+			local Slot = math.max(Now, self.NextSlot)
+			self.NextSlot = Slot + self.Config.RequestInterval
+			if Slot > Now then
+				task.wait(Slot - Now)
+			end
+		end
+
+		function LocalizationEngine:IsCancelled(Epoch: number, Language: string): boolean
+			return self.Dead or self.Epoch ~= Epoch or self.CurrentLanguage ~= Language
+		end
+
+		function LocalizationEngine:SendBatchRequest(Items: { BatchItem }, Language: string, Epoch: number): ({ string }?, string?)
+			local Url = self:BuildUrl(Items, Language)
+			local Reason = "Translation failed"
+			for Attempt = 0, self.Config.MaxRetries do
+				if self:IsCancelled(Epoch, Language) then
+					return nil, "cancelled"
+				end
+				self:PaceRequest()
+				if self:IsCancelled(Epoch, Language) then
+					return nil, "cancelled"
+				end
+				local RetryAfter
+				local Success, Result = pcall(function()
+					local Response = self:SendHttpRequest(Url)
+					if type(Response) == "string" then
+						return self:DecodeResponse(Response, Items)
+					end
+					if type(Response) ~= "table" then
+						error("Invalid HTTP response")
+					end
+					local Status = tonumber(Response.StatusCode or Response.Status) or 0
+					local Headers = Response.Headers or {}
+					RetryAfter = tonumber(Headers["Retry-After"] or Headers["retry-after"])
+					if Status < 200 or Status >= 300 or Response.Success == false then
+						error("HTTP " .. tostring(Status))
+					end
+					return self:DecodeResponse(Response.Body or "", Items)
+				end)
+				if Success then
+					return Result
+				end
+				Reason = tostring(Result)
+				if self:IsFormatError(Reason) then
+					return nil, Reason
+				end
+				if Attempt < self.Config.MaxRetries then
+					task.wait(math.min(30, RetryAfter or (2 ^ (Attempt + 1))))
+				end
+			end
+			return nil, Reason
+		end
+
+		function LocalizationEngine:SendSingleRequest(Item: BatchItem, Language: string, Epoch: number): (string?, string?)
+			if #Item.Tags > 0 then
+				return nil, "Protected tags; source retained"
+			end
+			if self:IsCancelled(Epoch, Language) then
+				return nil, "cancelled"
+			end
+			self:PaceRequest()
+			local Url = self:BuildQueryUrl(Item.Text, Language)
+			local Success, Result = pcall(function()
+				local Response = self:SendHttpRequest(Url)
+				local Body = type(Response) == "string" and Response or (type(Response) == "table" and Response.Body) or ""
+				local Data = HttpService:JSONDecode(Body)
+				if type(Data) ~= "table" or type(Data[1]) ~= "table" then
+					error("Unexpected Google JSON response")
+				end
+				local Pieces: { string } = {}
+				for _, Segment in ipairs(Data[1]) do
+					if type(Segment) == "table" and type(Segment[1]) == "string" then
+						table.insert(Pieces, Segment[1])
+					end
+				end
+				local Value = table.concat(Pieces):match("^%s*(.-)%s*$")
+				if Value == "" or Value:find("ZXQ", 1, true) then
+					error("Empty translation")
+				end
+				return (Item.Source:match("^%s*") or "") .. Value .. (Item.Source:match("%s*$") or "")
+			end)
+			if Success then
+				return Result
+			end
+			return nil, tostring(Result)
+		end
+
+		function LocalizationEngine:SendBatchWithFallback(Items: { BatchItem }, Language: string, Epoch: number): ({ string }?, string?)
+			local Result, Reason = self:SendBatchRequest(Items, Language, Epoch)
+			if Result then
+				return Result
+			end
+			if Reason == "cancelled" or not self:IsFormatError(Reason) then
+				return nil, Reason
+			end
+			if #Items == 1 then
+				local Value, Problem = self:SendSingleRequest(Items[1], Language, Epoch)
+				if Value then
+					return { Value }
+				end
+				return nil, Problem
+			end
+			local Middle = math.floor(#Items / 2)
+			local Left: { BatchItem }, Right: { BatchItem } = {}, {}
+			for Index, Item in ipairs(Items) do
+				table.insert(Index <= Middle and Left or Right, Item)
+			end
+			local LeftResult, LeftReason = self:SendBatchWithFallback(Left, Language, Epoch)
+			if LeftReason == "cancelled" then
+				return nil, LeftReason
+			end
+			local RightResult, RightReason = self:SendBatchWithFallback(Right, Language, Epoch)
+			if RightReason == "cancelled" then
+				return nil, RightReason
+			end
+			if not LeftResult and not RightResult then
+				return nil, LeftReason or RightReason
+			end
+			local Merged: { string } = {}
+			for Index = 1, #Left do
+				Merged[Index] = LeftResult and LeftResult[Index] or nil
+			end
+			for Index = 1, #Right do
+				Merged[Middle + Index] = RightResult and RightResult[Index] or nil
+			end
+			return Merged, LeftReason or RightReason
+		end
+
+		function LocalizationEngine:ShowToast(Kind: string, Language: string)
+			if self.Dead or not self.Config.Notifications then
+				return
+			end
+			local Code = Language:match("^[a-z]+") or Language
+			local CustomMessages = self.Config.Messages
+			local function PickMessage(Field: string): string
+				local Entry = type(CustomMessages) == "table" and (CustomMessages[Language] or CustomMessages[Code]) or nil
+				if type(Entry) == "table" and type(Entry[Field]) == "string" then
+					return Entry[Field]
+				end
+				local Defaults = DefaultMessages[Code] or DefaultMessages.en
+				return Defaults[Field] or DefaultMessages.en[Field]
+			end
+			local ToastTypes = { Start = "Info", Done = "Success", Fail = "Warning" }
+			local Success, Notification = pcall(function()
+				return Library:Notify({
+					Title = PickMessage("Title"),
+					Content = string.format(PickMessage(Kind), Language:upper()),
+					Duration = Kind == "Fail" and 6 or 4,
+					Type = ToastTypes[Kind],
+				})
+			end)
+			if Success and type(Notification) == "table" then
+				for _, Field in ipairs({ "Title", "ContentLabel", "SubContentLabel" }) do
+					local Object = Notification[Field]
+					if typeof(Object) == "Instance" then
+						pcall(Object.SetAttribute, Object, "ModulesNoTranslate", true)
+					end
+				end
+			end
+		end
+
+		function LocalizationEngine:ScheduleRetry()
+			if self.Dead or self.RetryScheduled then
+				return
+			end
+			self.FailCount += 1
+			if self.FailCount > 6 then
+				return
+			end
+			self.RetryScheduled = true
+			task.delay(self.Config.RetryCooldown + 1, function()
+				self.RetryScheduled = false
+				if not self.Dead then
+					self:Schedule()
+				end
+			end)
+		end
+
+		function LocalizationEngine:BuildBatches(Sources: { string }, Language: string, Epoch: number): ({ { BatchItem } }, boolean)
+			local Slice = CreateSlicer(self.Config.FrameBudget)
+			local Batches: { { BatchItem } }, Batch: { BatchItem } = {}, {}
+			local BaseLength = #self:BuildUrl({}, Language)
+			local MarkerLength = #HttpService:UrlEncode(string.format("ZXQB%06dQXZ\n", 1)) + #HttpService:UrlEncode("\n")
+			local Used = BaseLength
+			local Limit, MaxItems = self.Config.MaxURLLength, self.Config.BatchSize
+			self.Failed[Language] = self.Failed[Language] or {}
+			for _, Source in ipairs(Sources) do
+				if Slice() and self:IsCancelled(Epoch, Language) then
+					return {}, true
+				end
+				if self:NeedsTranslation(Source, Language) then
+					local Text, Tags = self:ProtectText(Source)
+					if Text then
+						local Size = MarkerLength + #HttpService:UrlEncode(Text)
+						if BaseLength + Size > Limit then
+							self.Failed[Language][Source] = os.clock() + self.Config.RetryCooldown
+							self:ReportError("Text exceeds batch URL limit; supply a manual translation or shorten it")
+						else
+							if #Batch > 0 and (Used + Size > Limit or #Batch >= MaxItems) then
+								table.insert(Batches, Batch)
+								Batch, Used = {}, BaseLength
+							end
+							table.insert(Batch, { Source = Source, Text = Text, Tags = Tags })
+							Used += Size
+						end
+					else
+						self.Failed[Language][Source] = os.clock() + self.Config.RetryCooldown
+						self:ReportError("Source contains reserved ZXQ markers; supply a manual translation")
+					end
+				end
+			end
+			if #Batch > 0 then
+				table.insert(Batches, Batch)
+			end
+			return Batches, false
+		end
+
+		function LocalizationEngine:HandleResult(Batch: { BatchItem }, Result: { string }?, Reason: string?, Language: string, Epoch: number, Sources: { string }): string?
+			if self.Dead or Epoch ~= self.Epoch then
+				return nil
+			end
+			self.Failed[Language] = self.Failed[Language] or {}
+			if Result then
+				self.Cache[Language] = self.Cache[Language] or {}
+				local Missing = false
+				for Index, Item in ipairs(Batch) do
+					if type(Result[Index]) == "string" then
+						self.Cache[Language][Item.Source] = Result[Index]
+					else
+						Missing = true
+						self.Failed[Language][Item.Source] = os.clock() + self.Config.RetryCooldown
+					end
+				end
+				if not self.Held then
+					self:CommitSoon()
+				end
+				self:ScheduleSave()
+				if Missing then
+					self:ScheduleRetry()
+				else
+					self.FailCount = 0
+				end
+			elseif Reason ~= "cancelled" and self.CurrentLanguage == Language then
+				if self:IsFormatError(Reason) then
+					for _, Item in ipairs(Batch) do
+						self.Failed[Language][Item.Source] = os.clock() + self.Config.RetryCooldown
+					end
+					self:ReportError(Reason)
+					self:ScheduleRetry()
+				else
+					for _, Source in ipairs(Sources) do
+						self.Failed[Language][Source] = os.clock() + self.Config.RetryCooldown
+					end
+					self:ReportError(Reason)
+					self:ScheduleRetry()
+					if self.ToastFailLanguage ~= Language then
+						self.ToastFailLanguage = Language
+						self:ShowToast("Fail", Language)
+					end
+					return "net"
+				end
+			end
+			return nil
+		end
+
+		function LocalizationEngine:RunBatches(Batches: { { BatchItem } }, Language: string, Epoch: number, Sources: { string }): boolean
+			local NextIndex, Running, Stop = 1, 0, false
+			local Workers = math.max(1, math.min(self.Config.Concurrency, #Batches))
+			for _ = 1, Workers do
+				Running += 1
+				task.spawn(function()
+					while not Stop and not self.Dead and Epoch == self.Epoch do
+						local Index = NextIndex
+						if Index > #Batches then
+							break
+						end
+						NextIndex = Index + 1
+						local Batch = Batches[Index]
+						local Success, Result, Reason = pcall(function()
+							return self:SendBatchWithFallback(Batch, Language, Epoch)
+						end)
+						if not Success then
+							Result, Reason = nil, tostring(Result)
+						end
+						local Handled, Flag = pcall(self.HandleResult, self, Batch, Result, Reason, Language, Epoch, Sources)
+						if not Handled then
+							self:ReportError(Flag)
+						end
+						if Flag == "net" then
+							Stop = true
+						end
+					end
+					Running -= 1
+				end)
+			end
+			while Running > 0 do
+				task.wait()
+			end
+			return Stop
+		end
+
+		function LocalizationEngine:RunWorker()
+			while self.Active and not self.Dead and self.Config.AutoTranslate do
+				local Epoch, Language = self.Epoch, self.CurrentLanguage
+				local Sources = self:CollectSources(CreateSlicer(self.Config.FrameBudget))
+				local Batches, Stale = {}, true
+				if not self:IsCancelled(Epoch, Language) then
+					Batches, Stale = self:BuildBatches(Sources, Language, Epoch)
+				end
+				if not Stale then
+					if #Batches == 0 then
+						self:ReleaseHold()
+						if self.ToastDoneLanguage ~= Language and not self.Pending and not self.Dead then
+							self.ToastStartLanguage, self.ToastDoneLanguage, self.ToastFailLanguage = Language, Language, nil
+							if Language ~= self.Config.SourceLanguage then
+								self:ShowToast("Done", Language)
+							end
+						end
+						break
+					end
+					if Language ~= self.Config.SourceLanguage and self.ToastStartLanguage ~= Language then
+						self.ToastStartLanguage, self.ToastDoneLanguage, self.ToastFailLanguage = Language, nil, nil
+						self:ShowToast("Start", Language)
+					end
+					local NetworkFailed = self:RunBatches(Batches, Language, Epoch, Sources)
+					if self.Dead or NetworkFailed then
+						self:ReleaseHold()
+						break
+					end
+				end
+			end
+		end
+
+		function LocalizationEngine:Schedule(Delay: number?)
+			if self.Dead or not self.Active or not self.Config.AutoTranslate or self.Scheduled then
+				return
+			end
+			self.Scheduled = true
+			task.delay(Delay or self.Config.Debounce, function()
+				self.Scheduled = false
+				if self.Dead then
+					return
+				end
+				if self.Busy then
+					self.Pending = true
+					return
+				end
+				self.Busy = true
+				local Success, Problem = pcall(function()
+					self:RunWorker()
+				end)
+				self.Busy = false
+				if not Success then
+					self:ReportError(Problem)
+				end
+				if self.Pending then
+					self.Pending = false
+					self:Schedule()
+				else
+					self:ReleaseHold()
+				end
+			end)
+		end
+
+		function LocalizationEngine:IsAvailable(Code: string): boolean
+			if self.Config.AutoTranslate then
+				return true
+			end
+			return Code == self.Config.DefaultLanguage or type(self.Config.Translations[Code]) == "table"
+		end
+
+		function LocalizationEngine:NotifyListeners(Previous: string)
+			for Listener in pairs(self.Listeners) do
+				local Success, Problem = pcall(Listener, self.CurrentLanguage, Previous)
+				if not Success then
+					self:ReportError(Problem)
+				end
+			end
+			self:SyncDropdowns()
+		end
+
+		function LocalizationEngine:OnChanged(Callback: (string, string) -> ())
+			assert(type(Callback) == "function", "OnChanged expects a function")
+			self.Listeners[Callback] = true
+			return {
+				Disconnect = function()
+					LocalizationEngine.Listeners[Callback] = nil
+				end,
+			}
+		end
+
+		function LocalizationEngine:SwitchDisplay(Code: string)
+			local SourceLanguage = self.Config.SourceLanguage
+			if self.Config.AutoTranslate and self.Config.SyncSwap and Code ~= SourceLanguage and Code ~= self.DisplayLanguage then
+				self:Hold()
+			else
+				self.Held = false
+				self.HoldToken += 1
+				self.DisplayLanguage = Code
+				self:Commit()
+				self:Schedule()
+			end
+		end
+
+		function LocalizationEngine:SetLanguage(Code: any): (boolean, string?)
+			if self.Dead then
+				return false, "Language manager was destroyed"
+			end
+			if not self.Active then
+				return false, "Call Localization first"
+			end
+			local Normalized = self:NormalizeCode(Code)
+			if not Normalized then
+				return false, "Invalid language code"
+			end
+			if not self.Config.Enabled and Normalized ~= self.Config.DefaultLanguage then
+				return false, "Language switching is disabled"
+			end
+			if not self:IsAvailable(Normalized) then
+				return false, "No dictionary for this language"
+			end
+			local Previous = self.CurrentLanguage
+			self.Epoch += 1
+			self.CurrentLanguage = Normalized
+			self.FailCount = 0
+			self.ToastStartLanguage, self.ToastDoneLanguage, self.ToastFailLanguage = nil, nil, nil
+			self:SwitchDisplay(Normalized)
+			self:ScheduleSave()
+			if Previous ~= Normalized then
+				self:NotifyListeners(Previous)
+			end
+			return true
+		end
+
+		function LocalizationEngine:GetLanguage(): string
+			return self.CurrentLanguage
+		end
+
+		function LocalizationEngine:Refresh(RetryFailed: boolean?): boolean
+			if self.Dead then
+				return false
+			end
+			if RetryFailed then
+				self.Failed = {}
+				self.FailCount = 0
+			end
+			self:Commit()
+			self:SyncDropdowns()
+			self:Schedule()
+			self:ScheduleSave()
+			return true
+		end
+
+		function LocalizationEngine:SetTranslations(Language: any, Entries: { [any]: any }, Replace: boolean?): boolean
+			local Normalized = self:NormalizeCode(Language)
+			assert(Normalized and type(Entries) == "table", "Expected language code and dictionary")
+			local Target = Replace and {} or (self.Config.Translations[Normalized] or {})
+			Entries = self:SplitDictionary(Entries, self.Config.NoTranslate)
+			for Source, Value in pairs(Entries) do
+				assert(type(Source) == "string" and (type(Value) == "string" or Value == false), "Translations map strings to strings (false removes)")
+				Target[Source] = Value ~= false and Value or nil
+			end
+			self.Config.Translations[Normalized] = Target
+			self:BuildTerms()
+			return self:Refresh()
+		end
+
+		function LocalizationEngine:ClearCache(Language: any?)
+			if Language then
+				local Normalized = self:NormalizeCode(Language)
+				assert(Normalized, "Invalid language code")
+				self.Cache[Normalized], self.Failed[Normalized] = nil, nil
+			else
+				self.Cache, self.Failed = {}, {}
+			end
+			self.Epoch += 1
+			self:Refresh()
+		end
+
+		function LocalizationEngine:GetOriginalText(Object: any, Property: string?): string
+			local Properties = self.Records[Object]
+			local Record = Properties and Properties[Property or "Text"]
+			return Record and Record.Source or Object[Property or "Text"]
+		end
+
+		function LocalizationEngine:SetOriginalText(Object: any, Source: string)
+			assert(type(Source) == "string", "Original text must be a string")
+			local Properties = self.Records[Object]
+			if not Properties then
+				Object.Text = Source
+				return
+			end
+			for _, Record in pairs(Properties) do
+				Record.Source, Record.Key = self:ParseSource(Source)
+				self:ApplyRecord(Record)
+			end
+			self:Schedule()
+			self:ScheduleSave()
+		end
+
+		function LocalizationEngine:SyncDropdowns()
+			for Dropdown, Entry in pairs(self.Dropdowns) do
+				Entry.Syncing = true
+				local Value = Entry.Labels[self.CurrentLanguage] or self.CurrentLanguage
+				local Success, Problem = pcall(Dropdown.SetValue, Dropdown, Value)
+				if not Success then
+					self:ReportError("Dropdown synchronization: " .. tostring(Problem))
+				end
+				Entry.Syncing = false
+			end
+		end
+
+		function LocalizationEngine:Configure(Options: any)
+			assert(not self.Dead, "Language manager was destroyed")
+			Options = Options or {}
+			local DefaultLanguage = assert(self:NormalizeCode(Options.DefaultLanguage or "en"), "Invalid DefaultLanguage")
+			local SourceLanguage = assert(self:NormalizeCode(Options.SourceLanguage or DefaultLanguage), "Invalid SourceLanguage")
+			local Translations, NoTranslate, Exact = {}, {}, {}
+			for _, Item in ipairs(type(Options.NoTranslateExact) == "table" and Options.NoTranslateExact or {}) do
+				if type(Item) == "string" then
+					Exact[Item] = true
+				end
+			end
+			for Code, Entries in pairs(Options.Translations or {}) do
+				if type(Code) == "string" and NoTranslateKeys[(Code:lower():gsub("[%s_%-]", ""))] then
+					if type(Entries) == "table" then
+						for _, Item in pairs(Entries) do
+							if type(Item) == "string" then
+								NoTranslate[Item] = true
+							end
+						end
+					end
+				else
+					local Normalized = self:NormalizeCode(Code)
+					assert(Normalized and type(Entries) == "table", "Translations must contain language tables")
+					Translations[Normalized] = self:SplitDictionary(Entries, NoTranslate)
+				end
+			end
+			for _, Item in ipairs(type(Options.NoTranslations) == "table" and Options.NoTranslations or {}) do
+				if type(Item) == "string" then
+					NoTranslate[Item] = true
+				end
+			end
+
+			local Signature: { string } = {}
+			for Key, Value in pairs(Translations[SourceLanguage] or {}) do
+				if type(Value) == "string" then
+					Signature[#Signature + 1] = Key .. "=" .. Value
+				end
+			end
+			table.sort(Signature)
+			local NewSignature = table.concat(Signature, "\n")
+			local FirstConfigure = self.Config == nil
+			local OldSource = self.Config and self.Config.SourceLanguage
+			local OldFile = self.Config and self.Config.CacheFile
+			if not FirstConfigure and self.SourceSignature ~= NewSignature then
+				self.Cache = {}
+			end
+			self.SourceSignature = NewSignature
+
+			self.Config = {
+				Enabled = Options.Enabled ~= false,
+				AutoTranslate = Options.AutoTranslate == true or Options.AutoTranslations == true,
+				DefaultLanguage = DefaultLanguage,
+				SourceLanguage = SourceLanguage,
+				Translations = Translations,
+				NoTranslate = NoTranslate,
+				NoTranslateExact = Exact,
+				Languages = Options.Languages,
+				Cache = Options.Cache ~= false,
+				CacheFile = assert(Options.CacheFile, "CacheFile is set by the Install adapter"),
+				SaveSelection = Options.SaveSelection ~= false,
+				AutoPruneCache = Options.AutoPruneCache == true,
+				Debounce = math.max(0.05, tonumber(Options.Debounce) or 0.2),
+				BatchSize = math.max(1, math.floor(tonumber(Options.BatchSize) or 40)),
+				MaxURLLength = math.max(512, math.min(16000, tonumber(Options.MaxURLLength) or 8000)),
+				Concurrency = math.max(1, math.min(8, math.floor(tonumber(Options.Concurrency) or 2))),
+				RequestInterval = math.max(0.05, tonumber(Options.RequestInterval) or 0.3),
+				MaxRetries = math.max(0, math.min(3, math.floor(tonumber(Options.MaxRetries) or 2))),
+				RetryCooldown = math.max(5, tonumber(Options.RetryCooldown) or 60),
+				Request = Options.Request,
+				OnError = Options.OnError,
+				Notifications = Options.Notifications ~= false,
+				Messages = Options.Messages,
+				SyncSwap = Options.SyncSwap ~= false,
+				SwapTimeout = math.max(2, tonumber(Options.SwapTimeout) or 10),
+				FrameBudget = math.max(0.0005, math.min(0.012, tonumber(Options.FrameBudget) or 0.003)),
+				SaveDelay = math.max(0.5, tonumber(Options.SaveDelay) or 2),
+			}
+			if FirstConfigure then
+				self.DisplayLanguage = SourceLanguage
+			end
+			self.SourceLanguage = SourceLanguage
+			self.Prefix = Options.Prefix or "loc:"
+			assert(type(self.Prefix) == "string" and self.Prefix ~= "", "Prefix must not be empty")
+			self.MissingSources = {}
+			for _, Entries in pairs(Translations) do
+				for Key, Value in pairs(Entries) do
+					if type(Value) == "string" and (Translations[SourceLanguage] or {})[Key] == nil and not Key:find("%s") and Key:find("[%.%_]") then
+						self.MissingSources["[" .. Key .. "]"] = true
+					end
+				end
+			end
+			self:BuildTerms()
+			if OldSource ~= SourceLanguage or OldFile ~= self.Config.CacheFile then
+				self.Cache = {}
+			end
+			self.Epoch += 1
+			self.Failed = {}
+			self.Active = true
+
+			local Previous = self.CurrentLanguage
+			local Saved = self:ReadCacheFile()
+			local Selected = self:NormalizeCode(Options.Language) or (self.Config.SaveSelection and Saved) or DefaultLanguage
+			if not self.Config.Enabled or not self:IsAvailable(Selected) then
+				Selected = DefaultLanguage
+			end
+			self.CurrentLanguage = Selected
+
+			for _, Properties in pairs(self.Records) do
+				for _, Record in pairs(Properties) do
+					if Record.Key then
+						Record.Source = self:ParseSource(self.Prefix .. Record.Key)
+					end
+				end
+			end
+
+			self:SwitchDisplay(Selected)
+			self:NotifyListeners(Previous)
+			self:ScheduleSave()
+			return self
+		end
+
+		function LocalizationEngine:Destroy()
+			if self.Dead then
+				return
+			end
+			self:SaveCache()
+			self.Dead = true
+			self.Epoch += 1
+			local Objects = {}
+			for Object in pairs(self.Records) do
+				table.insert(Objects, Object)
+			end
+			for _, Object in ipairs(Objects) do
+				self:Untrack(Object)
+			end
+			self.Listeners, self.Dropdowns = {}, {}
+		end
+
+		return LocalizationEngine
+	end
+
+	local DefaultQuick: { string } = { "en", "id", "ja", "es" }
+
+	local function EnsureFolder(Path: string)
+		if type(makefolder) ~= "function" then
+			return
+		end
+		local Built = ""
+		for Piece in Path:gmatch("[^/]+") do
+			Built = Built == "" and Piece or Built .. "/" .. Piece
+			if type(isfolder) ~= "function" or not isfolder(Built) then
+				pcall(makefolder, Built)
+			end
+		end
+	end
+
+	local function NormalizeLanguageCode(Code: any): string?
+		if type(Code) ~= "string" then
+			return nil
+		end
+		local Normalized = Code:lower():gsub("_", "-")
+		if #Normalized < 2 or #Normalized > 24 or not Normalized:match("^[a-z]+[a-z%-]*$") then
+			return nil
+		end
+		return Normalized
+	end
+
+	local function ChipColor(Language: LanguageInfo): Color3
+		if Language.Color then
+			return Language.Color
+		end
+		if FlagColors[Language.Code] then
+			return FlagColors[Language.Code]
+		end
+		local Hash = 0
+		for Index = 1, #Language.Code do
+			Hash = (Hash * 31 + Language.Code:byte(Index)) % 360
+		end
+		return Color3.fromHSV(Hash / 360, 0.55, 0.85)
+	end
+
+	local LocalizationManager = {
+		Version = "0.4.0",
+		Languages = Languages,
+		Folder = "FluentSettings",
+		Roots = {},
+		Connections = {},
+		Wrapped = {},
+		TranslateUnkeyed = true,
+		Configured = false,
+		Dead = false,
+	}
+
+	local function NormalizeFolder(Folder: any): string
+		assert(type(Folder) == "string" and Folder ~= "", "Folder is required for language storage")
+		local Cleaned = Folder:gsub("\\", "/"):gsub("/+", "/"):gsub("/$", "")
+		assert(Cleaned ~= "" and Cleaned:sub(1, 1) ~= "/" and not Cleaned:find(":", 1, true), "Folder must be a relative path")
+		for Piece in Cleaned:gmatch("[^/]+") do
+			assert(Piece ~= "." and Piece ~= "..", "Unsafe folder path")
+		end
+		return Cleaned
+	end
+
+	function LocalizationManager:ReportError(Message: any)
+		if self.Engine then
+			self.Engine:ReportError(Message)
+		else
+			pcall(function()
+				self.Library:Toast({ Text = tostring(Message), Type = "Warning", Duration = 4 })
+			end)
+		end
+	end
+
+	function LocalizationManager:SetFolder(Folder: string)
+		self.Folder = NormalizeFolder(Folder)
+	end
+
+	function LocalizationManager:GetCachePath(): string
+		return self.Folder .. "/LanguageCache.json"
+	end
+
+	function LocalizationManager:GetSettingsPath(): string
+		return self.Folder .. "/LanguageSettings.json"
+	end
+
+	function LocalizationManager:SetSaveManager(SaveManager: any)
+		self.SaveManager = SaveManager
+		return self
+	end
+
+	function LocalizationManager:LoadSettings(): { [string]: any }
+		if type(readfile) ~= "function" or type(isfile) ~= "function" then
+			return {}
+		end
+		local Path = self:GetSettingsPath()
+		local Read, Raw = pcall(function()
+			if isfile(Path) then
+				return readfile(Path)
+			end
+			return nil
+		end)
+		if not Read or type(Raw) ~= "string" then
+			return {}
+		end
+		local Decoded, Data = pcall(HttpService.JSONDecode, HttpService, Raw)
+		if Decoded and type(Data) == "table" then
+			return Data
+		end
+		return {}
+	end
+
+	function LocalizationManager:SaveSettings(): boolean
+		local Engine = self.Engine
+		if self.Dead or not Engine or not Engine.Config or type(writefile) ~= "function" then
+			return false
+		end
+		local Config = Engine.Config
+		local Written, Problem = pcall(function()
+			EnsureFolder(self.Folder)
+			writefile(self:GetSettingsPath(), HttpService:JSONEncode({
+				Version = 1,
+				AutoTranslate = Config.AutoTranslate,
+				Notifications = Config.Notifications,
+			}))
+		end)
+		if not Written then
+			self:ReportError("Cannot save language settings: " .. tostring(Problem))
+		end
+		return Written
+	end
+
+	function LocalizationManager:GetLanguageInfo(Code: any): LanguageInfo?
+		local Normalized = NormalizeLanguageCode(Code)
+		for _, Language in ipairs(self.Languages) do
+			if Language.Code == Normalized then
+				return Language
+			end
+		end
+		return nil
+	end
+
+	function LocalizationManager:AddLanguage(Info: any)
+		assert(type(Info) == "table" and type(Info.Name) == "string", "AddLanguage expects { Code, Name, Color?, GoogleCode? }")
+		local Code = assert(NormalizeLanguageCode(Info.Code), "AddLanguage: invalid language code")
+		if type(Info.GoogleCode) == "string" then
+			GoogleLanguageCodes[Code] = Info.GoogleCode
+		end
+		for Index, Existing in ipairs(self.Languages) do
+			if Existing.Code == Code then
+				self.Languages[Index] = { Code = Code, Name = Info.Name, Color = Info.Color or Existing.Color }
+				return self
+			end
+		end
+		table.insert(self.Languages, { Code = Code, Name = Info.Name, Color = Info.Color })
+		return self
+	end
+
+	function LocalizationManager:Localization(Config: any)
+		assert(not self.Dead, "LocalizationManager was destroyed")
+		assert(self.Engine, "Call SetLibrary before Localization")
+		assert(type(Config) == "table", "Localization expects a configuration table")
+		local Options = CopyTable(Config)
+
+		if Options.RememberSettings ~= false then
+			local Saved = self:LoadSettings()
+			if type(Saved.AutoTranslate) == "boolean" then
+				Options.AutoTranslate, Options.AutoTranslations = Saved.AutoTranslate, nil
+			end
+			if type(Saved.Notifications) == "boolean" then
+				Options.Notifications = Saved.Notifications
+			end
+		end
+
+		Options.AutoTranslate = Options.AutoTranslate == true or Options.AutoTranslations == true
+		Options.CacheFile = self:GetCachePath()
+
+		local Codes: { string }, Terms: { string }, Exact: { string } = {}, {}, {}
+		for _, Term in ipairs(Options.NoTranslations or {}) do
+			table.insert(Terms, Term)
+		end
+		for _, Language in ipairs(self.Languages) do
+			table.insert(Codes, Language.Code)
+			table.insert(Terms, Language.Name)
+			table.insert(Exact, Language.Code:upper())
+		end
+		Options.NoTranslations = Terms
+		Options.NoTranslateExact = Exact
+		Options.Languages = Options.Languages or Codes
+		self.Options = CopyTable(Options)
+		self.TranslateUnkeyed = Config.TranslateUnkeyed ~= false
+
+		if self.Configured and Options.Language == nil then
+			Options.Language = self.Engine.CurrentLanguage
+		end
+		self.Configured = true
+		self.Engine:Configure(Options)
+		self.Engine:Refresh()
+		self:RescanRoots()
+		return Config
+	end
+
+	function LocalizationManager:TrackObject(Object: any)
+		local Engine = self.Engine
+		if self.Dead or not Engine or not Engine.Config then
+			return
+		end
+		local IsBox = Object:IsA("TextBox")
+		if not (IsBox or Object:IsA("TextLabel") or Object:IsA("TextButton")) then
+			return
+		end
+		if not self.TranslateUnkeyed then
+			local Value = if IsBox then Object.PlaceholderText else Object.Text
+			if Value:sub(1, #Engine.Prefix) ~= Engine.Prefix then
+				return
+			end
+		end
+		local Success, Problem = pcall(Engine.Track, Engine, Object)
+		if not Success then
+			self:ReportError(Problem)
+		end
+	end
+
+	function LocalizationManager:ScanRoot(Root: any)
+		if not self.Roots[Root] then
+			return
+		end
+		task.spawn(function()
+			self:TrackObject(Root)
+			local StartedAt = os.clock()
+			for _, Object in ipairs(Root:GetDescendants()) do
+				if self.Dead then
+					return
+				end
+				self:TrackObject(Object)
+				if os.clock() - StartedAt > 0.003 then
+					task.wait()
+					StartedAt = os.clock()
+				end
+			end
+		end)
+	end
+
+	function LocalizationManager:RescanRoots()
+		local Roots = {}
+		for Root in pairs(self.Roots) do
+			table.insert(Roots, Root)
+		end
+		for _, Root in ipairs(Roots) do
+			self:ScanRoot(Root)
+		end
+	end
+
+	function LocalizationManager:AttachRoot(Root: any)
+		assert(typeof(Root) == "Instance", "AttachRoot expects a GUI Instance")
+		if self.Dead or self.Roots[Root] then
+			return self
+		end
+		self.Roots[Root] = true
+
+		table.insert(self.Connections, Root.DescendantAdded:Connect(function(Object: any)
+			if not IsTextObject(Object) then
+				return
+			end
+			task.defer(function()
+				if Object.Parent ~= nil then
+					self:TrackObject(Object)
+				end
+			end)
+		end))
+		table.insert(self.Connections, Root.Destroying:Connect(function()
+			self.Roots[Root] = nil
+		end))
+
+		self:ScanRoot(Root)
+		return self
+	end
+
+	function LocalizationManager:GetKnownRoots(): { any }
+		local Library = self.Library
+		local Found: { any } = {}
+		local function Add(Candidate: any)
+			if typeof(Candidate) == "Instance" and Candidate.Parent ~= nil then
+				table.insert(Found, Candidate)
+			end
+		end
+		Add(Library.GUI)
+		Add(Library.MenuGUI)
+		local Internals = Library.Internals
+		if type(Internals) == "table" then
+			local Notification = Internals.Notification
+			if type(Notification) == "table" then
+				Add(Notification.Gui)
+			end
+			local Components = Internals.Components
+			local Toast = type(Components) == "table" and Components.Toast
+			if type(Toast) == "table" then
+				Add(Toast.Gui)
+			end
+		end
+		if type(Library.Layers) == "table" then
+			for _, Layer in pairs(Library.Layers) do
+				Add(Layer)
+			end
+		end
+		return Found
+	end
+
+	function LocalizationManager:AttachKnownRoots()
+		if self.Dead then
+			return
+		end
+		for _, Root in ipairs(self:GetKnownRoots()) do
+			self:AttachRoot(Root)
+		end
+	end
+
+	function LocalizationManager:SetLanguage(Code: any): (boolean, string?)
+		assert(self.Engine, "Call SetLibrary first")
+		return self.Engine:SetLanguage(Code)
+	end
+
+	function LocalizationManager:GetLanguage(): string
+		assert(self.Engine, "Call SetLibrary first")
+		return self.Engine:GetLanguage()
+	end
+
+	function LocalizationManager:Refresh(RetryFailed: boolean?): boolean
+		assert(self.Engine, "Call SetLibrary first")
+		return self.Engine:Refresh(RetryFailed)
+	end
+
+	function LocalizationManager:OnChanged(Callback: (string, string) -> ())
+		assert(self.Engine, "Call SetLibrary first")
+		return self.Engine:OnChanged(Callback)
+	end
+
+	function LocalizationManager:SetTranslations(Language: any, Entries: { [any]: any }, Replace: boolean?): boolean
+		assert(self.Engine, "Call SetLibrary first")
+		return self.Engine:SetTranslations(Language, Entries, Replace)
+	end
+
+	function LocalizationManager:ClearCache(Language: any?)
+		assert(self.Engine, "Call SetLibrary first")
+		return self.Engine:ClearCache(Language)
+	end
+
+	function LocalizationManager:Ignore(Object: any, Ignored: boolean?)
+		if typeof(Object) == "Instance" then
+			Object:SetAttribute("ModulesNoTranslate", Ignored ~= false)
+		end
+	end
+
+	function LocalizationManager:SetAutoTranslate(State: boolean?)
+		local Engine = self.Engine
+		assert(Engine and Engine.Config, "Call Localization before SetAutoTranslate")
+		State = State ~= false
+		Engine.Config.AutoTranslate = State
+		if self.Options then
+			self.Options.AutoTranslate = State
+		end
+		Engine.Epoch += 1
+		Engine.FailCount = 0
+		if not State then
+			Engine:ReleaseHold()
+			if not Engine:IsAvailable(Engine.CurrentLanguage) then
+				Engine:SetLanguage(Engine.Config.DefaultLanguage)
+			end
+		end
+		Engine:Refresh()
+		self:SaveSettings()
+	end
+
+	function LocalizationManager:GetAutoTranslate(): boolean
+		local Engine = self.Engine
+		return Engine ~= nil and Engine.Config ~= nil and Engine.Config.AutoTranslate == true
+	end
+
+	function LocalizationManager:SetNotifications(State: boolean?)
+		local Engine = self.Engine
+		assert(Engine and Engine.Config, "Call Localization before SetNotifications")
+		Engine.Config.Notifications = State ~= false
+		if self.Options then
+			self.Options.Notifications = State ~= false
+		end
+		self:SaveSettings()
+	end
+
+	function LocalizationManager:GetNotifications(): boolean
+		local Engine = self.Engine
+		return Engine ~= nil and Engine.Config ~= nil and Engine.Config.Notifications == true
+	end
+
+	local function Detach(Self: any, Index: string, Object: any, Register: boolean?)
+		local Library = Self.Library
+		if Register then
+			local SaveManager = Self.SaveManager
+			if SaveManager and type(SaveManager.SetIgnoreIndexes) == "function" then
+				pcall(SaveManager.SetIgnoreIndexes, SaveManager, { Index })
+			end
+			return
+		end
+		if type(Library.Options) == "table" and Library.Options[Index] == Object then
+			Library.Options[Index] = nil
+		end
+	end
+
+	function LocalizationManager:AddDropdown(Host: any, Options: any?)
+		local Engine = self.Engine
+		assert(Engine and Engine.Config, "Call Localization before AddDropdown")
+		assert(type(Host) == "table" and type(Host.AddDropdown) == "function", "Host must be a Fluent Tab, Section or Group")
+		Options = CopyTable(Options)
+		local Entry = { Syncing = true, Labels = {} }
+		local Values: { string }, Reverse: { [string]: string } = {}, {}
+		local Tags: { [string]: any }, ItemTags: { [string]: string } = {}, {}
+		for _, Language in ipairs(self.Languages) do
+			local Label = Language.Name
+			table.insert(Values, Label)
+			Reverse[Label], Entry.Labels[Language.Code] = Language.Code, Label
+			Tags[Language.Code] = { Text = Language.Code:upper(), Color = ChipColor(Language) }
+			ItemTags[Label] = Language.Code
+		end
+		local Index = Options.Idx or "ModulesLanguage"
+		local UserCallback = Options.Callback
+		local Dropdown
+		Dropdown = Host:AddDropdown(Index, {
+			Title = Options.Title or "Language",
+			Description = Options.Description or Options.Desc
+				or string.format("%d languages • Manual dictionaries + automatic translation", #Values),
+			Icon = Options.Icon or "lucide:languages",
+			IconColor = Options.IconColor,
+			Values = Values,
+			Tags = Tags,
+			ItemTags = ItemTags,
+			Default = Entry.Labels[self:GetLanguage()] or Values[1],
+			Searchable = Options.Searchable ~= false,
+			Width = Options.Width or 190,
+			Callback = function(Value: any)
+				if Entry.Syncing then
+					return
+				end
+				if type(Value) == "table" then
+					Value = next(Value)
+				end
+				local Code = Reverse[Value]
+				if not Code then
+					return
+				end
+				local Success, Problem = self:SetLanguage(Code)
+				if not Success then
+					self:ReportError(Problem)
+					Engine:SyncDropdowns()
+				end
+				if UserCallback then
+					UserCallback(Code, Success, Problem)
+				end
+			end,
+		})
+		Detach(self, Index, Dropdown, Options.Register)
+		Engine.Dropdowns[Dropdown] = Entry
+		Entry.Syncing = false
+		return Dropdown
+	end
+
+	function LocalizationManager:AddQuickSwitch(Host: any, Options: any?)
+		local Engine = self.Engine
+		assert(Engine and Engine.Config, "Call Localization before AddQuickSwitch")
+		assert(type(Host) == "table" and type(Host.AddSegmented) == "function", "Host must be a Fluent Tab, Section or Group")
+		Options = CopyTable(Options)
+		if Options.Quick == false then
+			return nil
+		end
+		local Quick = type(Options.Quick) == "table" and Options.Quick or DefaultQuick
+
+		local Values: { string }, Reverse: { [string]: string }, Labels: { [string]: string } = {}, {}, {}
+		for _, Code in ipairs(Quick) do
+			local Normalized = NormalizeLanguageCode(Code)
+			if Normalized and self:GetLanguageInfo(Normalized) and not Labels[Normalized] then
+				local Label = Normalized:upper()
+				table.insert(Values, Label)
+				Reverse[Label], Labels[Normalized] = Normalized, Label
+			end
+		end
+		if #Values < 2 then
+			return nil
+		end
+
+		local Index = Options.QuickIdx or "ModulesLanguageQuick"
+		local Segmented
+		Segmented = Host:AddSegmented(Index, {
+			Title = Options.QuickTitle or "Quick switch",
+			Description = Options.QuickDescription,
+			Variant = "Inline",
+			Height = 28,
+			Options = Values,
+			Default = Labels[self:GetLanguage()] or Values[1],
+			Callback = function(Value: any)
+				local Code = Reverse[Value]
+				if not Code or Code == Engine.CurrentLanguage then
+					return
+				end
+				local Success, Problem = self:SetLanguage(Code)
+				if not Success then
+					self:ReportError(Problem)
+					Segmented:SetValue(Labels[Engine.CurrentLanguage], true)
+				end
+			end,
+		})
+		Detach(self, Index, Segmented, Options.Register)
+
+		Segmented:SetValue(Labels[self:GetLanguage()], true)
+		Engine:OnChanged(function(Code: string)
+			Segmented:SetValue(Labels[Code], true)
+		end)
+		return Segmented
+	end
+
+	function LocalizationManager:BuildSection(Host: any, Options: any?)
+		local Library = self.Library
+		assert(Library, "Call SetLibrary first")
+		assert(self.Engine and self.Engine.Config, "Call Localization before BuildSection")
+		assert(type(Host) == "table", "BuildSection expects a Fluent Tab, Section or Group")
+		Options = CopyTable(Options)
+
+		local Section = Host
+		if type(Host.AddSection) == "function" then
+			Section = Host:AddSection(Options.SectionTitle or "Language", {
+				Icon = Options.SectionIcon or "lucide:languages",
+			})
+		end
+
+		local Dropdown = self:AddDropdown(Section, Options)
+
+		local Quick = self:AddQuickSwitch(Section, Options)
+
+		local AutoToggle, NoticeToggle
+		if Options.Preferences ~= false then
+			local AutoIndex = Options.AutoIdx or "ModulesLanguageAuto"
+			AutoToggle = Section:AddToggle(AutoIndex, {
+				Title = "Auto translate",
+				Description = "Translate texts without a dictionary using Google Translate",
+				Icon = "lucide:wand-2",
+				Default = self:GetAutoTranslate(),
+				Callback = function(Value: boolean)
+					if Value ~= self:GetAutoTranslate() then
+						self:SetAutoTranslate(Value)
+					end
+				end,
+			})
+			Detach(self, AutoIndex, AutoToggle, Options.Register)
+
+			local NoticeIndex = Options.NoticeIdx or "ModulesLanguageNotice"
+			NoticeToggle = Section:AddToggle(NoticeIndex, {
+				Title = "Translation notices",
+				Description = "Show a notification when a translation starts, finishes or fails",
+				Icon = "lucide:bell",
+				Default = self:GetNotifications(),
+				Callback = function(Value: boolean)
+					if Value ~= self:GetNotifications() then
+						self:SetNotifications(Value)
+					end
+				end,
+			})
+			Detach(self, NoticeIndex, NoticeToggle, Options.Register)
+		end
+
+		if Options.Maintenance ~= false then
+			local Maintenance = Section
+			if type(Section.AddGroup) == "function" then
+				Maintenance = Section:AddGroup({
+					Title = "Maintenance",
+					Icon = "lucide:wrench",
+					Accordion = true,
+					Collapsed = Options.MaintenanceCollapsed ~= false,
+					Gap = 8,
+				})
+			end
+
+			Maintenance:AddButton({
+				Title = "Retry translation",
+				Description = "Try again for texts that failed to translate",
+				Icon = "lucide:refresh-cw",
+				Variant = "Tonal",
+				ButtonText = "Retry",
+				Callback = function()
+					self:Refresh(true)
+				end,
+			})
+
+			Maintenance:AddButton({
+				Title = "Clear cache",
+				Description = "Delete saved automatic translations",
+				Icon = "lucide:trash-2",
+				Variant = "Danger",
+				ButtonText = "Clear",
+				Callback = function()
+					local Window = Library.Window
+					if not (Window and type(Window.Dialog) == "function") then
+						self:ClearCache()
+						return
+					end
+					Window:Dialog({
+						Title = "Clear cache",
+						Content = "Delete all saved automatic translations? They will be translated again when needed.",
+						Buttons = {
+							{
+								Title = "Clear",
+								Variant = "Danger",
+								Callback = function()
+									self:ClearCache()
+								end,
+							},
+							{ Title = "Cancel" },
+						},
+					})
+				end,
+			})
+		end
+
+		return Section, Dropdown, Quick
+	end
+
+	function LocalizationManager:GetStatus()
+		local Tracked = 0
+		local Engine = self.Engine
+		if Engine then
+			for _ in pairs(Engine.Records) do
+				Tracked += 1
+			end
+		end
+		return {
+			Version = self.Version,
+			Language = Engine and Engine.CurrentLanguage or nil,
+			DisplayLanguage = Engine and Engine.DisplayLanguage or nil,
+			Busy = Engine and Engine.Busy or false,
+			TrackedObjects = Tracked,
+			LanguageCount = #self.Languages,
+			AutoTranslate = self:GetAutoTranslate(),
+			CachePath = self:GetCachePath(),
+			SettingsPath = self:GetSettingsPath(),
+			LastError = Engine and Engine.LastError or nil,
+			Dead = self.Dead == true,
+		}
+	end
+
+	function LocalizationManager:Destroy()
+		if self.Dead then
+			return
+		end
+		self.Dead = true
+		if self.Engine then
+			self.Engine:Destroy()
+		end
+		for _, Connection in ipairs(self.Connections) do
+			Connection:Disconnect()
+		end
+		if self.Library then
+			for Key, Original in pairs(self.Wrapped) do
+				self.Library[Key] = Original or nil
+			end
+		end
+		self.Roots, self.Connections, self.Wrapped = {}, {}, {}
+	end
+
+	function LocalizationManager:SetLibrary(Library: any)
+		assert(type(Library) == "table" and type(Library.CreateWindow) == "function", "Expected the Fluent Library table")
+		if self.Library == Library then
+			return self
+		end
+		assert(self.Library == nil, "SetLibrary was already called with another Library")
+		self.Library = Library
+		self.Engine = CreateLocalizationEngine(Library)
+
+		self:AttachKnownRoots()
+
+		local MainGui = Library.GUI
+		if typeof(MainGui) == "Instance" and MainGui.Parent then
+			table.insert(self.Connections, MainGui.Parent.ChildAdded:Connect(function(Child: any)
+				if not Child:IsA("ScreenGui") then
+					return
+				end
+				task.defer(function()
+					self:AttachKnownRoots()
+				end)
+			end))
+		end
+
+		local Events = Library.Events
+		if Events and Events.ElementAdded then
+			table.insert(self.Connections, Events.ElementAdded:Connect(function(Object: any, Kind: string)
+				if Kind ~= "Keybind" or type(Object) ~= "table" or not Object.Row then
+					return
+				end
+				local Content = Object.Row.Content
+				if typeof(Content) ~= "Instance" then
+					return
+				end
+				local DisplayText = tostring(Object.Value)
+				for _, Descendant in ipairs(Content:GetDescendants()) do
+					if Descendant:IsA("TextLabel") and Descendant.Text == DisplayText then
+						Descendant:SetAttribute("ModulesNoTranslate", true)
+					end
+				end
+			end))
+		end
+
+		local Wrappers = {
+			Localization = function(_: any, Config: any)
+				return self:Localization(Config)
+			end,
+			SetLanguage = function(_: any, Code: any)
+				return self:SetLanguage(Code)
+			end,
+			GetLanguage = function()
+				return self:GetLanguage()
+			end,
+		}
+		for Key, Wrapper in pairs(Wrappers) do
+			self.Wrapped[Key] = rawget(Library, Key) or false
+			Library[Key] = Wrapper
+		end
+
+		if type(Library.OnUnload) == "function" then
+			Library:OnUnload(function()
+				self:Destroy()
+			end)
+		end
+
+		return self
+	end
+
+	function LocalizationManager:Install(Library: any, Options: any?)
+		Options = Options or {}
+		if Options.Folder then
+			self:SetFolder(Options.Folder)
+		end
+		self:SetLibrary(Library)
+		if Options.SaveManager then
+			self:SetSaveManager(Options.SaveManager)
+		end
+		return self
+	end
+
+	return LocalizationManager
+end)()
+
+-- This is the most important thing to return all built-in managers
 -- !DO NOT DELETE THIS CODE I WILL KILL YOU IF YOU DELETE THIS!
 local Managers = {
 	SaveManager = SaveManager,
 	InterfaceManager = InterfaceManager,
 	Extension = Extension,
+	LocalizationManager = LocalizationManager,
 }
 
 local Owners = {}
@@ -32215,4 +37674,4 @@ local function CreateSlot()
 	return Proxy
 end
 
-return Library, CreateSlot(), CreateSlot(), CreateSlot()
+return Library, CreateSlot(), CreateSlot(), CreateSlot(), CreateSlot()
