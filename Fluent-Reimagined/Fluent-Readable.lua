@@ -12,6 +12,9 @@ local function GetService(Name: string): any
 	return if Success then Result else Service
 end
 
+local AssetService: AssetService = GetService("AssetService")
+local ContentProvider: ContentProvider = GetService("ContentProvider")
+local ContextActionService: ContextActionService = GetService("ContextActionService")
 local CoreGui: CoreGui = GetService("CoreGui")
 local GuiService: GuiService = GetService("GuiService")
 local HttpService: HttpService = GetService("HttpService")
@@ -2833,10 +2836,6 @@ local InstantGoal: any = nil
 
 -- Ui blur write by styear
 local UiBlur = (function()
-	local AssetService = game:GetService("AssetService")
-	local RunService = game:GetService("RunService")
-	local TweenService = game:GetService("TweenService")
-
 	type Props = {
 		Blur: number,
 		Brightness: number,
@@ -5066,6 +5065,63 @@ function Creator.AddSignal(signal: RBXScriptSignal, callback: (...any) -> ()): R
 	return connection
 end
 
+Creator.Input = {
+	Name = "Fluent_" .. HttpService:GenerateGUID(false),
+	Priority = Enum.ContextActionPriority.High.Value,
+	Count = 0,
+	Hovers = {},
+}
+
+function Creator.Input.Hover(Target: GuiObject, Types: { EnumItem }, Callback: ((State: Enum.UserInputState, Input: InputObject) -> ())?)
+	local Router = Creator.Input
+	Router.Count += 1
+
+	local Name = Router.Name .. "_Hover" .. Router.Count
+	local Active = false
+
+	local function Handle(_Name: string, State: Enum.UserInputState, Input: InputObject)
+		if Callback then
+			Callback(State, Input)
+		end
+		return Enum.ContextActionResult.Sink
+	end
+
+	local function Release()
+		if not Active then
+			return
+		end
+		Active = false
+		Router.Hovers[Name] = nil
+		ContextActionService:UnbindAction(Name)
+	end
+
+	local function Acquire()
+		if Active then
+			return
+		end
+		Active = true
+		Router.Hovers[Name] = Release
+		ContextActionService:BindActionAtPriority(Name, Handle, false, Router.Priority + 1, unpack(Types))
+	end
+
+	Creator.AddSignal(Target.MouseEnter, Acquire)
+	Creator.AddSignal(Target.MouseLeave, Release)
+	Creator.AddSignal(Target.Destroying, Release)
+	Creator.AddSignal(Target.AncestryChanged, function()
+		if not Target:IsDescendantOf(game) then
+			Release()
+		end
+	end)
+
+	return Release
+end
+
+function Creator.Input.Destroy()
+	for _, Release in next, table.clone(Creator.Input.Hovers) do
+		Release()
+	end
+end
+
 Creator.Surfaces = setmetatable({}, { __mode = "k" })
 
 function Creator.RegisterSurface(Root: GuiObject): GuiObject
@@ -5824,6 +5880,7 @@ function Creator.AddGuarded(Object: GuiButton, Event: string, Callback: (...any)
 end
 
 function Creator.Disconnect()
+	Creator.Input.Destroy()
 	local signals = Creator.Signals
 	for index = #signals, 1, -1 do
 		signals[index]:Disconnect()
@@ -5831,6 +5888,180 @@ function Creator.Disconnect()
 	end
 	PruneThreshold = 256
 end
+
+Creator.FastFlags = {}
+Creator.FastFlagEntries = {}
+
+local function GetFastFlagEntry(Name: string)
+	local Entry = Creator.FastFlagEntries[Name]
+	if not Entry then
+		Entry = { List = {}, Waiters = {}, Depth = 0, Dirty = false }
+		Creator.FastFlagEntries[Name] = Entry
+	end
+	return Entry
+end
+
+local function CompactFastFlagList(List)
+	local Write = 0
+	for Read = 1, #List do
+		local Observer = List[Read]
+		if Observer then
+			Write += 1
+			List[Write] = Observer
+		end
+	end
+	for Index = #List, Write + 1, -1 do
+		List[Index] = nil
+	end
+end
+
+local function RunFastFlagObserver(Observer, Value, Name)
+	local Success, Error = pcall(Observer, Value, Name)
+	if not Success then
+		warn(`FastFlag "{Name}" observer failed: {Error}`)
+	end
+end
+
+function Creator.DefineFastFlagsUsage(Definitions: { [any]: any }): number
+	assert(type(Definitions) == "table", "DefineFastFlagsUsage - Expected a table of flags")
+
+	local Count = 0
+	for Key, Value in next, Definitions do
+		local Name, Default = Key, Value
+		if type(Key) == "number" then
+			Name, Default = Value, false
+		end
+		assert(type(Name) == "string" and Name ~= "", "DefineFastFlagsUsage - Expected a flag name")
+
+		GetFastFlagEntry(Name)
+		if Creator.FastFlags[Name] == nil then
+			Creator.FastFlags[Name] = Default
+		end
+		Count += 1
+	end
+
+	return Count
+end
+
+function Creator.GetFastFlag(Name: string): any
+	return Creator.FastFlags[Name]
+end
+
+function Creator.IsFastFlagDefined(Name: string): boolean
+	return Creator.FastFlags[Name] ~= nil
+end
+
+function Creator.SetFastFlag(Name: string, Value: any)
+	assert(type(Name) == "string" and Name ~= "", "SetFastFlag - Expected a flag name")
+
+	local Flags = Creator.FastFlags
+	local Entry = GetFastFlagEntry(Name)
+	if Flags[Name] == Value then
+		return
+	end
+	Flags[Name] = Value
+
+	local List = Entry.List
+	Entry.Depth += 1
+	for Index = 1, #List do
+		local Observer = List[Index]
+		if Observer then
+			RunFastFlagObserver(Observer, Value, Name)
+		end
+	end
+	Entry.Depth -= 1
+
+	if Entry.Dirty and Entry.Depth == 0 then
+		Entry.Dirty = false
+		CompactFastFlagList(List)
+	end
+
+	if Value and #Entry.Waiters > 0 then
+		local Waiters = Entry.Waiters
+		Entry.Waiters = {}
+		for _, Thread in Waiters do
+			task.spawn(Thread, Value)
+		end
+	end
+end
+
+function Creator.ObserveFastFlag(Name: string, Callback: (Value: any, Name: string) -> (), Immediate: boolean?): () -> ()
+	assert(type(Name) == "string" and Name ~= "", "ObserveFastFlag - Expected a flag name")
+	assert(type(Callback) == "function", "ObserveFastFlag - Expected a callback")
+
+	local Entry = GetFastFlagEntry(Name)
+	if Creator.FastFlags[Name] == nil then
+		Creator.FastFlags[Name] = false
+	end
+	table.insert(Entry.List, Callback)
+
+	if Immediate then
+		RunFastFlagObserver(Callback, Creator.FastFlags[Name], Name)
+	end
+
+	local Active = true
+	return function()
+		if not Active then
+			return
+		end
+		Active = false
+
+		local Index = table.find(Entry.List, Callback)
+		if not Index then
+			return
+		end
+		if Entry.Depth > 0 then
+			Entry.List[Index] = false
+			Entry.Dirty = true
+		else
+			table.remove(Entry.List, Index)
+		end
+	end
+end
+
+function Creator.WaitForFastFlag(Name: string, Timeout: number?): any
+	assert(type(Name) == "string" and Name ~= "", "WaitForFastFlag - Expected a flag name")
+
+	local Current = Creator.FastFlags[Name]
+	if Current then
+		return Current
+	end
+	if Current == nil then
+		Creator.FastFlags[Name] = false
+	end
+
+	local Entry = GetFastFlagEntry(Name)
+	local Thread = coroutine.running()
+	table.insert(Entry.Waiters, Thread)
+
+	local Timer
+	if Timeout then
+		Timer = task.delay(Timeout, function()
+			local Index = table.find(Entry.Waiters, Thread)
+			if Index then
+				table.remove(Entry.Waiters, Index)
+				task.spawn(Thread, nil)
+			end
+		end)
+	end
+
+	local Result = coroutine.yield()
+	if Timer then
+		pcall(task.cancel, Timer)
+	end
+	return Result
+end
+
+function Creator.ClearFastFlags()
+	table.clear(Creator.FastFlags)
+	table.clear(Creator.FastFlagEntries)
+end
+
+Creator.DefineFastFlagsUsage({
+	WindowCreated = false,
+	IntroFinished = false,
+	WindowLoaded = false,
+})
 
 function Creator.GetThemeProperty(Property: string): any
 	local Theme = ThemeResolver.Resolve(Library.Theme, Library.ThemeMode)
@@ -6117,7 +6348,7 @@ function Creator.New(className: string, properties: Props?, children: { Instance
 	local parent: Instance? = nil
 	local themeTag: ThemeTag? = nil
 	local iconData: any = nil
-	local miniMessage: boolean? = nil
+	local colorText: boolean? = nil
 
 	if properties then
 		for name, value in properties do
@@ -6125,8 +6356,8 @@ function Creator.New(className: string, properties: Props?, children: { Instance
 				themeTag = value
 			elseif name == "Parent" then
 				parent = value
-			elseif name == "MiniMessage" then
-				miniMessage = value
+			elseif name == "ColorText" then
+				colorText = value
 			elseif name == "Name" then
 
 				instance.Name = instance.ClassName
@@ -6143,13 +6374,13 @@ function Creator.New(className: string, properties: Props?, children: { Instance
 	end
 
 	if
-		miniMessage ~= false
-		and Library.MiniMessage ~= false
+		colorText ~= false
+		and Library.ColorText ~= false
 		and (resolved == "TextLabel" or resolved == "TextButton")
 	then
 		local Text = instance.Text
-		if Text ~= "" and Creator.HasMiniMessage(Text) then
-			instance.Text = Creator.MiniMessage(Text)
+		if Text ~= "" and Creator.HasColorText(Text) then
+			instance.Text = Creator.ColorText(Text)
 		end
 	end
 
@@ -6324,7 +6555,7 @@ function Creator.ApplyText(Object)
 	end
 end
 
-local MiniColors: { [string]: string } = {
+local ColorTextNames: { [string]: string } = {
 	black = "#000000",
 	dark_blue = "#0000AA",
 	dark_green = "#00AA00",
@@ -6351,7 +6582,7 @@ local MiniColors: { [string]: string } = {
 	brown = "#AA5500",
 }
 
-local MiniFormats: { [string]: string } = {
+local ColorTextStyles: { [string]: string } = {
 	bold = "b",
 	italic = "i",
 	underline = "u",
@@ -6360,12 +6591,12 @@ local MiniFormats: { [string]: string } = {
 	strike = "s",
 }
 
-local function MiniParseColor(Text: string?): Color3?
+local function ColorTextParse(Text: string?): Color3?
 	if not Text then
 		return nil
 	end
 	Text = string.lower((string.gsub(Text, "^%s*(.-)%s*$", "%1")))
-	local Named = MiniColors[Text]
+	local Named = ColorTextNames[Text]
 	if Named then
 		Text = Named
 	end
@@ -6386,7 +6617,7 @@ local function MiniParseColor(Text: string?): Color3?
 	)
 end
 
-local function MiniToHex(Color: Color3): string
+local function ColorTextHex(Color: Color3): string
 	return string.format(
 		"#%02X%02X%02X",
 		math.floor(Color.R * 255 + 0.5),
@@ -6395,7 +6626,7 @@ local function MiniToHex(Color: Color3): string
 	)
 end
 
-local function MiniSampleColors(Colors: { Color3 }, Alpha: number): Color3
+local function ColorTextSample(Colors: { Color3 }, Alpha: number): Color3
 	local Count = #Colors
 	if Count == 1 then
 		return Colors[1]
@@ -6427,11 +6658,11 @@ local function MiniTokenize(Text: string)
 			Name = (string.gsub(Name, "^%s*(.-)%s*$", "%1"))
 			if Closing == "" and (Name == "br" or Name == "nl" or Name == "newline") then
 				Token = { Kind = "Break" }
-			elseif Name == "reset" or Name == "obfuscated" or Name == "gradient" or MiniFormats[Name] then
+			elseif Name == "reset" or Name == "obfuscated" or Name == "gradient" or ColorTextStyles[Name] then
 				Token = { Kind = "Tag", Name = Name, Args = Args, Closing = Closing == "/", Raw = Raw }
 			elseif Name == "color" or Name == "colour" or Name == "c" then
 				Token = { Kind = "Tag", Name = "color", Args = Args, Closing = Closing == "/", Raw = Raw }
-			elseif MiniColors[Name] or string.match(Name, "^#%x%x%x%x%x%x$") or string.match(Name, "^#%x%x%x$") then
+			elseif ColorTextNames[Name] or string.match(Name, "^#%x%x%x%x%x%x$") or string.match(Name, "^#%x%x%x$") then
 				Token = { Kind = "Tag", Name = "color", Args = Name, Closing = Closing == "/", Raw = Raw }
 			end
 		end
@@ -6448,20 +6679,516 @@ local function MiniTokenize(Text: string)
 	return Tokens, Found
 end
 
-function Creator.HasMiniMessage(Text: any): boolean
-	if type(Text) ~= "string" or not string.find(Text, "<", 1, true) then
+local ColorTextSyntax = {
+	Order = { "MiniMessage", "BBCode", "ANSI", "Bukkit", "IRC" },
+	Names = {
+		minimessage = "MiniMessage",
+		mini = "MiniMessage",
+		bbcode = "BBCode",
+		ansi = "ANSI",
+		bukkit = "Bukkit",
+		legacy = "Bukkit",
+		spigot = "Bukkit",
+		minecraft = "Bukkit",
+		irc = "IRC",
+		mirc = "IRC",
+	},
+	Aliases = {
+		b = "bold",
+		strong = "bold",
+		i = "italic",
+		em = "italic",
+		u = "underline",
+		s = "strikethrough",
+		strike = "strikethrough",
+		del = "strikethrough",
+		color = "color",
+		colour = "color",
+		c = "color",
+		gradient = "gradient",
+		br = "break",
+		reset = "reset",
+	},
+	Tags = {
+		b = true,
+		i = true,
+		u = true,
+		s = true,
+		br = true,
+		font = true,
+		stroke = true,
+		uppercase = true,
+		smallcaps = true,
+		mark = true,
+		sc = true,
+		uc = true,
+	},
+	Escapes = { "\\x1[bB]%[", "\\u001[bB]%[", "\\033%[", "\\e%[" },
+	Levels = { 0, 95, 135, 175, 215, 255 },
+	Palettes = {
+		Ansi = {
+			"#000000",
+			"#CD3131",
+			"#0DBC79",
+			"#E5E510",
+			"#2472C8",
+			"#BC3FBC",
+			"#11A8CD",
+			"#E5E5E5",
+			"#666666",
+			"#F14C4C",
+			"#23D18B",
+			"#F5F543",
+			"#3B8EEA",
+			"#D670D6",
+			"#29B8DB",
+			"#FFFFFF",
+		},
+		Irc = {
+			"#FFFFFF",
+			"#000000",
+			"#00007F",
+			"#009300",
+			"#FF0000",
+			"#7F0000",
+			"#9C009C",
+			"#FC7F00",
+			"#FFFF00",
+			"#00FC00",
+			"#009393",
+			"#00FFFF",
+			"#0000FC",
+			"#FF00FF",
+			"#7F7F7F",
+			"#D2D2D2",
+		},
+		Bukkit = {
+			["0"] = "#000000",
+			["1"] = "#0000AA",
+			["2"] = "#00AA00",
+			["3"] = "#00AAAA",
+			["4"] = "#AA0000",
+			["5"] = "#AA00AA",
+			["6"] = "#FFAA00",
+			["7"] = "#AAAAAA",
+			["8"] = "#555555",
+			["9"] = "#5555FF",
+			a = "#55FF55",
+			b = "#55FFFF",
+			c = "#FF5555",
+			d = "#FF55FF",
+			e = "#FFFF55",
+			f = "#FFFFFF",
+		},
+	},
+	Formats = {
+		l = "bold",
+		m = "strikethrough",
+		n = "underline",
+		o = "italic",
+		r = "reset",
+		k = "obfuscated",
+	},
+}
+
+ColorTextSyntax.MiniMessage = MiniTokenize
+
+function ColorTextSyntax.Escape(Text: string): string
+	Text = string.gsub(Text, "<(/?)(%a+)([^<>]*)>", function(Closing, Name, Rest)
+		if ColorTextSyntax.Tags[string.lower(Name)] then
+			return "\1" .. Closing .. Name .. Rest .. "\4"
+		end
+		return nil
+	end)
+	Text = string.gsub(Text, "&(#?%w+;)", "\5%1")
+	Text = string.gsub(Text, "&", "&amp;")
+	Text = string.gsub(Text, "<", "&lt;")
+	Text = string.gsub(Text, ">", "&gt;")
+	Text = string.gsub(Text, "\5", "&")
+	Text = string.gsub(Text, "\1", "<")
+	Text = string.gsub(Text, "\4", ">")
+	return Text
+end
+
+function ColorTextSyntax.Text(Tokens, Value: string)
+	if Value ~= "" then
+		table.insert(Tokens, { Kind = "Text", Value = ColorTextSyntax.Escape(Value) })
+	end
+end
+
+function ColorTextSyntax.Tag(Tokens, Name: string, Args: string?, Closing: boolean?)
+	table.insert(Tokens, { Kind = "Tag", Name = Name, Args = Args or "", Closing = Closing == true, Raw = "" })
+end
+
+function ColorTextSyntax.Apply(Tokens, State, Key: string, Value: any)
+	if State[Key] == Value then
+		return
+	end
+	if State[Key] then
+		ColorTextSyntax.Tag(Tokens, Key, nil, true)
+	end
+	State[Key] = Value
+	if Value then
+		ColorTextSyntax.Tag(Tokens, Key, if Key == "color" then Value else nil, false)
+	end
+end
+
+function ColorTextSyntax.Reset(Tokens, State)
+	if next(State) == nil then
+		return
+	end
+	ColorTextSyntax.Tag(Tokens, "reset")
+	table.clear(State)
+end
+
+function ColorTextSyntax.Color256(Index: number): string
+	Index = math.clamp(math.floor(Index), 0, 255)
+	local Palette = ColorTextSyntax.Palettes.Ansi
+	if Index < 16 then
+		return Palette[Index + 1]
+	end
+	if Index < 232 then
+		local Cube = Index - 16
+		local Levels = ColorTextSyntax.Levels
+		return string.format(
+			"#%02X%02X%02X",
+			Levels[math.floor(Cube / 36) + 1],
+			Levels[math.floor(Cube / 6) % 6 + 1],
+			Levels[Cube % 6 + 1]
+		)
+	end
+	local Gray = 8 + (Index - 232) * 10
+	return string.format("#%02X%02X%02X", Gray, Gray, Gray)
+end
+
+function ColorTextSyntax.Graphic(Tokens, State, Arguments: string)
+	local Codes = {}
+	for Part in string.gmatch(Arguments .. ";", "([^;:]*)[;:]") do
+		table.insert(Codes, tonumber(Part) or 0)
+	end
+
+	local Palette = ColorTextSyntax.Palettes.Ansi
+	local Index = 1
+	while Index <= #Codes do
+		local Code = Codes[Index]
+		if Code == 0 then
+			ColorTextSyntax.Reset(Tokens, State)
+		elseif Code == 1 then
+			ColorTextSyntax.Apply(Tokens, State, "bold", true)
+		elseif Code == 3 then
+			ColorTextSyntax.Apply(Tokens, State, "italic", true)
+		elseif Code == 4 then
+			ColorTextSyntax.Apply(Tokens, State, "underline", true)
+		elseif Code == 9 then
+			ColorTextSyntax.Apply(Tokens, State, "strikethrough", true)
+		elseif Code == 22 then
+			ColorTextSyntax.Apply(Tokens, State, "bold", nil)
+		elseif Code == 23 then
+			ColorTextSyntax.Apply(Tokens, State, "italic", nil)
+		elseif Code == 24 then
+			ColorTextSyntax.Apply(Tokens, State, "underline", nil)
+		elseif Code == 29 then
+			ColorTextSyntax.Apply(Tokens, State, "strikethrough", nil)
+		elseif Code >= 30 and Code <= 37 then
+			ColorTextSyntax.Apply(Tokens, State, "color", Palette[Code - 29])
+		elseif Code == 39 then
+			ColorTextSyntax.Apply(Tokens, State, "color", nil)
+		elseif Code >= 90 and Code <= 97 then
+			ColorTextSyntax.Apply(Tokens, State, "color", Palette[Code - 81])
+		elseif Code == 38 or Code == 48 then
+			local Mode = Codes[Index + 1]
+			local Color
+			if Mode == 5 then
+				Color = ColorTextSyntax.Color256(Codes[Index + 2] or 0)
+				Index += 2
+			elseif Mode == 2 then
+				Color = string.format(
+					"#%02X%02X%02X",
+					math.clamp(Codes[Index + 2] or 0, 0, 255),
+					math.clamp(Codes[Index + 3] or 0, 0, 255),
+					math.clamp(Codes[Index + 4] or 0, 0, 255)
+				)
+				Index += 4
+			end
+			if Color and Code == 38 then
+				ColorTextSyntax.Apply(Tokens, State, "color", Color)
+			end
+		end
+		Index += 1
+	end
+end
+
+function ColorTextSyntax.BBCode(Text: string)
+	local Tokens = {}
+	if not string.find(Text, "[", 1, true) then
+		return Tokens, false
+	end
+
+	local Lower = string.lower(Text)
+	local Open = {}
+	local Mark = 1
+	local Search = 1
+	local Found = false
+
+	while true do
+		local Start, Finish, Closing, Name, Equals, Argument = string.find(Text, "%[(/?)(%a+)(=?)([^%[%]]*)%]", Search)
+		if not Start then
+			break
+		end
+
+		Name = string.lower(Name)
+		Argument = string.gsub(string.match(Argument, "^%s*(.-)%s*$"), "^[\"'](.*)[\"']$", "%1")
+
+		local Tag = ColorTextSyntax.Aliases[Name]
+		local Valid = false
+		if Tag and not (Equals == "" and Argument ~= "") then
+			local Closer = string.find(Lower, "[/" .. Name .. "]", Finish + 1, true) ~= nil
+			if Closing == "/" then
+				Valid = (Open[Tag] or 0) > 0
+			elseif Tag == "color" then
+				Valid = ColorTextParse(Argument) ~= nil
+			elseif Tag == "gradient" then
+				Valid = Argument ~= "" and Closer
+			elseif Tag == "break" or Tag == "reset" then
+				Valid = Equals == ""
+			else
+				Valid = Equals == "" and Closer
+			end
+		end
+
+		if Valid then
+			Found = true
+			ColorTextSyntax.Text(Tokens, string.sub(Text, Mark, Start - 1))
+			if Closing == "/" then
+				Open[Tag] -= 1
+				ColorTextSyntax.Tag(Tokens, Tag, nil, true)
+			elseif Tag == "break" then
+				table.insert(Tokens, { Kind = "Break" })
+			elseif Tag == "reset" then
+				table.clear(Open)
+				ColorTextSyntax.Tag(Tokens, "reset")
+			else
+				Open[Tag] = (Open[Tag] or 0) + 1
+				ColorTextSyntax.Tag(Tokens, Tag, (string.gsub(Argument, "[,;]", ":")), false)
+			end
+			Mark = Finish + 1
+		end
+		Search = Finish + 1
+	end
+
+	ColorTextSyntax.Text(Tokens, string.sub(Text, Mark))
+	return Tokens, Found
+end
+
+function ColorTextSyntax.ANSI(Text: string)
+	local Tokens = {}
+	if not string.find(Text, "\27", 1, true) and not string.find(Text, "\\", 1, true) then
+		return Tokens, false
+	end
+
+	for _, Literal in ColorTextSyntax.Escapes do
+		Text = string.gsub(Text, Literal, "\27[")
+	end
+
+	local State = {}
+	local Mark = 1
+	local Search = 1
+	local Found = false
+
+	while true do
+		local Start, Finish, Arguments, Final = string.find(Text, "\27%[([%d;:?]*)(%a)", Search)
+		if not Start then
+			break
+		end
+		Found = true
+		ColorTextSyntax.Text(Tokens, string.sub(Text, Mark, Start - 1))
+		if Final == "m" then
+			ColorTextSyntax.Graphic(Tokens, State, Arguments)
+		end
+		Mark = Finish + 1
+		Search = Finish + 1
+	end
+
+	ColorTextSyntax.Text(Tokens, string.sub(Text, Mark))
+	return Tokens, Found
+end
+
+function ColorTextSyntax.Bukkit(Text: string, Ampersand: boolean?)
+	local Tokens = {}
+	if not string.find(Text, "\194\167", 1, true) and not (Ampersand and string.find(Text, "&", 1, true)) then
+		return Tokens, false
+	end
+
+	local Palette = ColorTextSyntax.Palettes.Bukkit
+	local State = {}
+	local Length = #Text
+	local Mark = 1
+	local Index = 1
+	local Found = false
+
+	while Index <= Length do
+		local Width = 0
+		if string.sub(Text, Index, Index + 1) == "\194\167" then
+			Width = 2
+		elseif Ampersand and string.byte(Text, Index) == 38 and not string.find(Text, "^&#?%w+;", Index) then
+			Width = 1
+		end
+
+		local Consumed = 0
+		local Color
+		local Action
+
+		if Width > 0 then
+			local Marker = string.sub(Text, Index, Index + Width - 1)
+			local Code = string.lower(string.sub(Text, Index + Width, Index + Width))
+			if Code == "#" then
+				local Digits = string.match(Text, "^%x%x%x%x%x%x", Index + Width + 1)
+				if Digits then
+					Color = "#" .. string.upper(Digits)
+					Consumed = Width + 7
+				end
+			elseif Code == "x" then
+				local Cursor = Index + Width + 1
+				local Digits = ""
+				for _ = 1, 6 do
+					local Digit = string.match(string.sub(Text, Cursor + Width, Cursor + Width), "^%x$")
+					if string.sub(Text, Cursor, Cursor + Width - 1) ~= Marker or not Digit then
+						Digits = nil
+						break
+					end
+					Digits ..= Digit
+					Cursor += Width + 1
+				end
+				if Digits then
+					Color = "#" .. string.upper(Digits)
+					Consumed = Cursor - Index
+				end
+			elseif Palette[Code] then
+				Color = Palette[Code]
+				Consumed = Width + 1
+			elseif ColorTextSyntax.Formats[Code] then
+				Action = ColorTextSyntax.Formats[Code]
+				Consumed = Width + 1
+			end
+		end
+
+		if Consumed > 0 then
+			Found = true
+			ColorTextSyntax.Text(Tokens, string.sub(Text, Mark, Index - 1))
+			if Color then
+				ColorTextSyntax.Reset(Tokens, State)
+				ColorTextSyntax.Apply(Tokens, State, "color", Color)
+			elseif Action == "reset" then
+				ColorTextSyntax.Reset(Tokens, State)
+			elseif Action ~= "obfuscated" then
+				ColorTextSyntax.Apply(Tokens, State, Action, true)
+			end
+			Index += Consumed
+			Mark = Index
+		else
+			Index += 1
+		end
+	end
+
+	ColorTextSyntax.Text(Tokens, string.sub(Text, Mark))
+	return Tokens, Found
+end
+
+function ColorTextSyntax.IRC(Text: string)
+	local Tokens = {}
+	if not string.find(Text, "[\2\3\15\22\29\30\31]") then
+		return Tokens, false
+	end
+
+	local Palette = ColorTextSyntax.Palettes.Irc
+	local Toggles = { [2] = "bold", [29] = "italic", [31] = "underline", [30] = "strikethrough" }
+	local State = {}
+	local Mark = 1
+	local Search = 1
+
+	while true do
+		local Start, Finish = string.find(Text, "[\2\3\15\22\29\30\31]", Search)
+		if not Start then
+			break
+		end
+
+		ColorTextSyntax.Text(Tokens, string.sub(Text, Mark, Start - 1))
+
+		local Code = string.byte(Text, Start)
+		if Code == 3 then
+			local Digits = string.match(Text, "^%d%d?", Finish + 1)
+			if Digits then
+				Finish += #Digits
+				ColorTextSyntax.Apply(Tokens, State, "color", Palette[tonumber(Digits) + 1])
+				local Back = string.match(Text, "^,%d%d?", Finish + 1)
+				if Back then
+					Finish += #Back
+				end
+			else
+				ColorTextSyntax.Apply(Tokens, State, "color", nil)
+			end
+		elseif Toggles[Code] then
+			ColorTextSyntax.Apply(Tokens, State, Toggles[Code], if State[Toggles[Code]] then nil else true)
+		elseif Code == 15 then
+			ColorTextSyntax.Reset(Tokens, State)
+		end
+
+		Mark = Finish + 1
+		Search = Finish + 1
+	end
+
+	ColorTextSyntax.Text(Tokens, string.sub(Text, Mark))
+	return Tokens, true
+end
+
+function ColorTextSyntax.Candidate(Text: any, Format: string?): boolean
+	if type(Text) ~= "string" then
 		return false
 	end
-	local _, Found = MiniTokenize(Text)
+	if Format or Library.LegacyAmpersand == true then
+		return true
+	end
+	return string.find(Text, "[<%[\27\194\2\3\15\22\29\30\31\\]") ~= nil
+end
+
+function ColorTextSyntax.Tokenize(Text: string, Format: string?)
+	if Format then
+		local Name = ColorTextSyntax.Names[string.lower(Format)]
+		local Tokenizer = Name and ColorTextSyntax[Name]
+		if not Tokenizer then
+			return {}, false
+		end
+		return Tokenizer(Text, true)
+	end
+
+	local Enabled = Library.ColorFormats
+	for _, Name in ColorTextSyntax.Order do
+		if not Enabled or Enabled[Name] ~= false then
+			local Tokens, Found = ColorTextSyntax[Name](Text, Library.LegacyAmpersand == true)
+			if Found then
+				return Tokens, true
+			end
+		end
+	end
+	return {}, false
+end
+
+Creator.ColorFormats = ColorTextSyntax.Order
+
+function Creator.HasColorText(Text: any, Format: string?): boolean
+	if not ColorTextSyntax.Candidate(Text, Format) then
+		return false
+	end
+	local _, Found = ColorTextSyntax.Tokenize(Text, Format)
 	return Found
 end
 
-function Creator.MiniMessage(Text: any): any
-	if type(Text) ~= "string" or not string.find(Text, "<", 1, true) then
+function Creator.ColorText(Text: any, Format: string?): any
+	if not ColorTextSyntax.Candidate(Text, Format) then
 		return Text
 	end
 
-	local Tokens, Found = MiniTokenize(Text)
+	local Tokens, Found = ColorTextSyntax.Tokenize(Text, Format)
 	if not Found then
 		return Text
 	end
@@ -6534,7 +7261,7 @@ function Creator.MiniMessage(Text: any): any
 					Paint.Index += 1
 					table.insert(
 						Out,
-						'<font color="' .. MiniToHex(MiniSampleColors(Paint.Colors, Alpha)) .. '">' .. Character .. "</font>"
+						'<font color="' .. ColorTextHex(ColorTextSample(Paint.Colors, Alpha)) .. '">' .. Character .. "</font>"
 					)
 				end
 			else
@@ -6556,7 +7283,7 @@ function Creator.MiniMessage(Text: any): any
 				else
 					local Colors = {}
 					for Part in string.gmatch(Token.Args, "[^:]+") do
-						local Color = MiniParseColor(Part)
+						local Color = ColorTextParse(Part)
 						if Color then
 							table.insert(Colors, Color)
 						end
@@ -6570,13 +7297,13 @@ function Creator.MiniMessage(Text: any): any
 				if Token.Closing then
 					CloseGroup("font")
 				else
-					local Color = MiniParseColor(Token.Args)
+					local Color = ColorTextParse(Token.Args)
 					if Color then
-						OpenTag("font", '<font color="' .. MiniToHex(Color) .. '">')
+						OpenTag("font", '<font color="' .. ColorTextHex(Color) .. '">')
 					end
 				end
 			else
-				local Group = MiniFormats[Name]
+				local Group = ColorTextStyles[Name]
 				if Token.Closing then
 					CloseGroup(Group)
 				else
@@ -6590,10 +7317,10 @@ function Creator.MiniMessage(Text: any): any
 	return table.concat(Out)
 end
 
-function Creator.SetMiniText(Object: any, Text: any)
-	if type(Text) == "string" and Library.MiniMessage ~= false and Creator.HasMiniMessage(Text) then
+function Creator.SetColorText(Object: any, Text: any, Format: string?)
+	if type(Text) == "string" and Library.ColorText ~= false and Creator.HasColorText(Text, Format) then
 		Object.RichText = true
-		Object.Text = Creator.MiniMessage(Text)
+		Object.Text = Creator.ColorText(Text, Format)
 		return
 	end
 	Object.Text = Text
@@ -6640,13 +7367,13 @@ function Creator.ToColorSequence(Value: any): ColorSequence?
 		return ColorSequence.new(Value)
 	end
 	if Kind == "string" then
-		local Color = MiniParseColor(Value)
+		local Color = ColorTextParse(Value)
 		if Color then
 			return ColorSequence.new(Color)
 		end
 		local Colors = {}
 		for Part in string.gmatch(Value, "[^:,%s]+") do
-			local Parsed = MiniParseColor(Part)
+			local Parsed = ColorTextParse(Part)
 			if Parsed then
 				table.insert(Colors, Parsed)
 			end
@@ -6667,7 +7394,7 @@ function Creator.ToColorSequence(Value: any): ColorSequence?
 			Time = Entry.Time or Entry.T or Entry[1]
 		end
 		if type(Color) == "string" then
-			Color = MiniParseColor(Color)
+			Color = ColorTextParse(Color)
 		end
 		if typeof(Color) == "Color3" then
 			table.insert(Entries, { Time = Time, Color = Color, Index = Index })
@@ -7017,11 +7744,18 @@ function Creator.BindDrag(Target, OnDrag, OnEnd, Options)
 	local StartTime = 0
 	local LastPos = Vector2.zero
 
+	local Gate = Options and Options.Gate
+	local Unclamped = Options and Options.Unclamped
+
 	local function Update(Position)
 		local SizeX = math.max(Target.AbsoluteSize.X, 1)
 		local SizeY = math.max(Target.AbsoluteSize.Y, 1)
-		local X = math.clamp((Position.X - Target.AbsolutePosition.X) / SizeX, 0, 1)
-		local Y = math.clamp((Position.Y - Target.AbsolutePosition.Y) / SizeY, 0, 1)
+		local X = (Position.X - Target.AbsolutePosition.X) / SizeX
+		local Y = (Position.Y - Target.AbsolutePosition.Y) / SizeY
+		if not Unclamped then
+			X = math.clamp(X, 0, 1)
+			Y = math.clamp(Y, 0, 1)
+		end
 		OnDrag(X, Y)
 	end
 
@@ -7107,6 +7841,10 @@ function Creator.BindDrag(Target, OnDrag, OnEnd, Options)
 			end
 
 			if not Creator.AcceptsInput(Target, Input) then
+				return
+			end
+
+			if Gate and not Gate((Position.X - AbsPos.X) / math.max(AbsSize.X, 1), (Position.Y - AbsPos.Y) / math.max(AbsSize.Y, 1)) then
 				return
 			end
 
@@ -11821,7 +12559,7 @@ Components.Element = (function()
 
 	function Row:SetTitle(Set)
 		self.Title = Set or ""
-		Creator.SetMiniText(self.TitleLabel, self.Title)
+		Creator.SetColorText(self.TitleLabel, self.Title)
 	end
 
 	function Row:SetMarquee(Value)
@@ -11834,7 +12572,7 @@ Components.Element = (function()
 		end
 		self.Desc = Set
 		self.DescLabel.Visible = Set ~= ""
-		Creator.SetMiniText(self.DescLabel, Set)
+		Creator.SetColorText(self.DescLabel, Set)
 	end
 
 	function Row:SetIcon(Icon)
@@ -12585,7 +13323,7 @@ Components.TitleBar = (function()
 
 		TitleBar.Title = Label({
 			RichText = true,
-			Text = Creator.MiniMessage(Config.Title or ""),
+			Text = Creator.ColorText(Config.Title or ""),
 			TextSize = 17,
 			Weight = "SemiBold",
 			Size = UDim2.fromScale(0, 1),
@@ -12595,7 +13333,7 @@ Components.TitleBar = (function()
 
 		TitleBar.SubTitle = Label({
 			RichText = true,
-			Text = Creator.MiniMessage(Config.SubTitle or ""),
+			Text = Creator.ColorText(Config.SubTitle or ""),
 			TextSize = 12,
 			Weight = "Regular",
 			Tag = "SubText",
@@ -18326,7 +19064,7 @@ Components.Window = (function()
 		end
 
 		function Window:SetTitleText(Value)
-			Window.TitleBar.Title.Text = Creator.MiniMessage(Value or "")
+			Window.TitleBar.Title.Text = Creator.ColorText(Value or "")
 		end
 
 		function Window:SetTitleColor(Value, Options)
@@ -18354,7 +19092,7 @@ Components.Window = (function()
 		end
 
 		function Window:SetSubTitle(Value)
-			Window.TitleBar.SubTitle.Text = Creator.MiniMessage(Value or "")
+			Window.TitleBar.SubTitle.Text = Creator.ColorText(Value or "")
 			Window.TitleBar.SubTitle.Visible = Window.SubTitleShown ~= false and (Value or "") ~= ""
 		end
 
@@ -20667,14 +21405,18 @@ ElementsTable.Slider = (function()
 		if Config.Variant == "Hue" then
 			Config.Min = Config.Min or 0
 			Config.Max = Config.Max or 360
-			Config.Default = Config.Default or 0
+			Config.Default = Config.Default or (if Config.Dual == true then { Min = Config.Min, Max = Config.Max } else 0)
 			Config.Suffix = Config.Suffix or "°"
+		end
+		if Config.Dual == true and Config.Default == nil and Config.Min and Config.Max then
+			Config.Default = { Min = Config.Min, Max = Config.Max }
 		end
 		assert(Config.Default, "Slider - Missing default value.")
 		assert(Config.Min, "Slider - Missing minimum value.")
 		assert(Config.Max, "Slider - Missing maximum value.")
 
 		local Variant = Config.Variant or "Pill"
+		local Dual = Config.Dual == true
 
 		local Slider = {
 			Value = nil,
@@ -20685,6 +21427,7 @@ ElementsTable.Slider = (function()
 			Callback = Config.Callback or function(Value) end,
 			Type = "Slider",
 			Variant = Variant,
+			Gap = math.max(tonumber(Config.Gap) or 0, 0),
 		}
 
 		local Row = MakeRow(self, Config, false)
@@ -20697,26 +21440,57 @@ ElementsTable.Slider = (function()
 		local Gradient = Hue or Variant == "Gradient"
 		local Number = Variant == "Number"
 		local NumberBox
+		local NumberBoxHigh
 
-		if Bubble then
-			Row.Clip.ClipsDescendants = false
-			Row.Clip.ZIndex = 5
+		local function MeasureText(Text, Size)
+			return TextService:GetTextSize(Text, Size, Enum.Font.GothamMedium, Vector2.new(math.huge, math.huge)).X
 		end
 
-		local Thumb = New("Frame", {
-			Size = UDim2.fromOffset(22, 14),
-			AnchorPoint = Vector2.new(0.5, 0.5),
-			Position = UDim2.new(0, 0, 0.5, 0),
-			BackgroundColor3 = Color3.new(1, 1, 1),
-			ZIndex = 3,
-		}, {
-			Corner(7),
-			New("UIStroke", {
-				Color = Color3.new(0, 0, 0),
-				Transparency = 0.86,
-				ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
-			}),
-		})
+		local function GetWidest(Size, WithSuffix)
+			local Suffix = if WithSuffix then Slider.Suffix else ""
+			local Digits = math.max(#tostring(math.floor(math.abs(Slider.Min))), #tostring(math.floor(math.abs(Slider.Max))))
+			local Pattern = string.rep("0", Digits)
+			if Slider.Rounding > 0 then
+				Pattern ..= "." .. string.rep("0", Slider.Rounding)
+			end
+			if Slider.Min < 0 then
+				Pattern = "-" .. Pattern
+			end
+
+			local Widest = MeasureText(Pattern .. Suffix, Size)
+			for _, Bound in { Slider.Min, Slider.Max } do
+				local Text = tostring(tonumber(Library:Round(Bound, Slider.Rounding))) .. Suffix
+				Widest = math.max(Widest, MeasureText(Text, Size))
+			end
+			return math.ceil(Widest)
+		end
+
+		local DisplayWidth = math.max(if Wide then 80 elseif Gradient then 42 else 40, GetWidest(12, true))
+		if Dual then
+			DisplayWidth = math.max(DisplayWidth, GetWidest(12, true) * 2 + MeasureText(" - ", 12))
+		end
+		local NumberWidth = math.max(48, GetWidest(12, false) + 16)
+		local BubbleWidth = math.max(32, GetWidest(11, true) + 16)
+
+		local function MakeThumb()
+			return New("Frame", {
+				Size = UDim2.fromOffset(22, 14),
+				AnchorPoint = Vector2.new(0.5, 0.5),
+				Position = UDim2.new(0, 0, 0.5, 0),
+				BackgroundColor3 = Color3.new(1, 1, 1),
+				ZIndex = 3,
+			}, {
+				Corner(7),
+				New("UIStroke", {
+					Color = Color3.new(0, 0, 0),
+					Transparency = 0.86,
+					ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+				}),
+			})
+		end
+
+		local Thumb = MakeThumb()
+		local ThumbHigh = if Dual then MakeThumb() else nil
 
 		local Fill = New("Frame", {
 			Size = UDim2.new(0, 0, 1, 0),
@@ -20779,30 +21553,28 @@ ElementsTable.Slider = (function()
 			Weight = "Medium",
 			Tag = "TextSecondary",
 			TextXAlignment = Enum.TextXAlignment.Right,
-			Size = UDim2.fromOffset(40, 28),
+			Size = UDim2.fromOffset(DisplayWidth, 28),
 			Visible = not Bubble and not Number,
 		})
 
-		local BubbleLabel
-		local BubbleFrame
-		if Bubble then
-			BubbleLabel = Label({
+		local Bubbles = {}
+
+		local function MakeBubble(Parent)
+			local BubbleLabel = Label({
 				Text = "",
 				TextSize = 11,
 				Weight = "Medium",
 				Tag = "ToastText",
-				AutomaticSize = Enum.AutomaticSize.X,
-				Size = UDim2.new(0, 0, 1, 0),
+				Size = UDim2.fromScale(1, 1),
 				TextXAlignment = Enum.TextXAlignment.Center,
 			})
-			BubbleFrame = New("Frame", {
-				Size = UDim2.fromOffset(0, 24),
-				AutomaticSize = Enum.AutomaticSize.X,
+			local BubbleFrame = New("Frame", {
+				Size = UDim2.fromOffset(BubbleWidth, 24),
 				AnchorPoint = Vector2.new(0.5, 1),
 				Position = UDim2.new(0.5, 0, 0, -10),
 				BackgroundTransparency = 1,
 				ZIndex = 5,
-				Parent = Thumb,
+				Parent = Parent,
 				ThemeTag = {
 					BackgroundColor3 = "ToastBackground",
 				},
@@ -20815,7 +21587,20 @@ ElementsTable.Slider = (function()
 				BubbleLabel,
 			})
 			BubbleLabel.TextTransparency = 1
+			table.insert(Bubbles, { Frame = BubbleFrame, Label = BubbleLabel })
+			return BubbleLabel
 		end
+
+		local BubbleLabel
+		local BubbleLabelHigh
+		if Bubble then
+			BubbleLabel = MakeBubble(Thumb)
+			if ThumbHigh then
+				BubbleLabelHigh = MakeBubble(ThumbHigh)
+			end
+		end
+
+		local ThumbInset = 11
 
 		local Hit = New("TextButton", {
 			Size = UDim2.new(1, 0, 0, 28),
@@ -20833,41 +21618,36 @@ ElementsTable.Slider = (function()
 			Hit,
 		})
 
-		if Gradient then
-			Row:SetExtra(26)
-			local Left = Row.LeftSpace
-			Track.Size = UDim2.new(1, -(Left + 14 + 48), 0, 28)
-			Track.AnchorPoint = Vector2.new(0, 1)
-			Track.Position = UDim2.new(0, Left, 1, -6)
-			Track.Parent = Row.Content
-			Display.AnchorPoint = Vector2.new(1, 1)
-			Display.Position = UDim2.new(1, -14, 1, -6)
-			Display.Size = UDim2.fromOffset(42, 28)
-			Display.Parent = Row.Content
-		elseif Wide then
+		if ThumbHigh then
+			ThumbHigh.Parent = Track
+		end
+
+		if Gradient or Wide then
+			local Left = if Gradient then Row.LeftSpace else 14
 			Row:SetExtra(24)
-			Track.Size = UDim2.new(1, -28, 0, 28)
+			Row:SetReserve(DisplayWidth + 8)
+			Track.Size = UDim2.new(1, -(Left + 14 + ThumbInset * 2), 0, 28)
 			Track.AnchorPoint = Vector2.new(0, 1)
-			Track.Position = UDim2.new(0, 14, 1, -6)
+			Track.Position = UDim2.new(0, Left + ThumbInset, 1, -6)
 			Track.Parent = Row.Content
 			Display.AnchorPoint = Vector2.new(1, 0)
-			Display.Position = UDim2.new(1, -14, 0, 8)
-			Display.Size = UDim2.fromOffset(80, 20)
+			Display.Position = UDim2.new(1, -14, 0, 11)
+			Display.Size = UDim2.fromOffset(DisplayWidth, 17)
 			Display.Parent = Row.Content
 		else
 			local Holder = New("Frame", {
-				Size = UDim2.fromOffset(((Bubble or Number) and 0 or 48) + Width + (Number and 58 or 0), 28),
+				Size = UDim2.fromOffset(((Bubble or Number) and 0 or DisplayWidth + 8) + Width + (Number and (NumberWidth + 10) * (Dual and 2 or 1) or 0), 28),
 				BackgroundTransparency = 1,
 			})
 			Track.Size = UDim2.fromOffset(Width, 28)
-			Track.Position = UDim2.fromOffset((Bubble or Number) and 0 or 48, 0)
+			Track.Position = UDim2.fromOffset(if Number and Dual then NumberWidth + 10 elseif Bubble or Number then 0 else DisplayWidth + 8, 0)
 			Track.Parent = Holder
 			Display.Position = UDim2.fromOffset(0, 0)
 			Display.Parent = Holder
 			if Number then
 				NumberBox = New("TextBox", {
-					Size = UDim2.fromOffset(48, 26),
-					Position = UDim2.fromOffset(Width + 10, 1),
+					Size = UDim2.fromOffset(NumberWidth, 26),
+					Position = UDim2.fromOffset(if Dual then 0 else Width + 10, 1),
 					BackgroundTransparency = 0.94,
 					ClearTextOnFocus = false,
 					FontFace = Fonts.Medium,
@@ -20884,33 +21664,121 @@ ElementsTable.Slider = (function()
 				Creator.AddSignal(NumberBox.FocusLost, function()
 					local Parsed = tonumber(NumberBox.Text)
 					if Parsed then
-						Slider:SetValue(Parsed)
+						if Dual then
+							Slider:SetMinValue(Parsed)
+						else
+							Slider:SetValue(Parsed)
+						end
 					else
-						NumberBox.Text = tostring(Slider.Value)
+						NumberBox.Text = tostring(if Dual then Slider.Value.Min else Slider.Value)
 					end
 				end)
+				if Dual then
+					NumberBoxHigh = New("TextBox", {
+						Size = UDim2.fromOffset(NumberWidth, 26),
+						Position = UDim2.fromOffset(Width + 20 + NumberWidth, 1),
+						BackgroundTransparency = 0.94,
+						ClearTextOnFocus = false,
+						FontFace = Fonts.Medium,
+						TextSize = 12,
+						Text = "",
+						Parent = Holder,
+						ThemeTag = {
+							BackgroundColor3 = "Keybind",
+							TextColor3 = "Text",
+						},
+					}, {
+						Corner(7),
+					})
+					Creator.AddSignal(NumberBoxHigh.FocusLost, function()
+						local Parsed = tonumber(NumberBoxHigh.Text)
+						if Parsed then
+							Slider:SetMaxValue(Parsed)
+						else
+							NumberBoxHigh.Text = tostring(Slider.Value.Max)
+						end
+					end)
+				end
+			end
+			if Bubble then
+				Holder.ZIndex = 9
 			end
 			Place(Holder, Row)
 		end
 
 		local Dragging = false
+		local BubbleToken = 0
 
 		local function ShowBubble(Value)
-			if BubbleFrame then
-				Creator.Tween(BubbleFrame, 0.14, { BackgroundTransparency = Value and 0 or 1 })
-				Creator.Tween(BubbleLabel, 0.14, { TextTransparency = Value and 0 or 1 })
+			if #Bubbles == 0 then
+				return
 			end
+			BubbleToken += 1
+			local Token = BubbleToken
+			if Value then
+				Row.Clip.ClipsDescendants = false
+				Row.Clip.ZIndex = 5
+			else
+				task.delay(0.2, function()
+					if BubbleToken == Token then
+						Row.Clip.ClipsDescendants = true
+						Row.Clip.ZIndex = 1
+					end
+				end)
+			end
+			for _, Entry in Bubbles do
+				Creator.Tween(Entry.Frame, 0.14, { BackgroundTransparency = Value and 0 or 1 })
+				Creator.Tween(Entry.Label, 0.14, { TextTransparency = Value and 0 or 1 })
+			end
+		end
+
+		local ActiveThumb: string?
+
+		local function PickThumb(Target: number): string?
+			local Current = Slider.Value
+			local DistanceLow = math.abs(Target - Current.Min)
+			local DistanceHigh = math.abs(Target - Current.Max)
+			if DistanceLow < DistanceHigh then
+				return "Min"
+			end
+			if DistanceHigh < DistanceLow then
+				return "Max"
+			end
+			if Target < Current.Min then
+				return "Min"
+			end
+			if Target > Current.Max then
+				return "Max"
+			end
+			return nil
 		end
 
 		Creator.BindDrag(Hit, function(X)
 			if not Dragging then
 				Dragging = true
+				ActiveThumb = nil
 				Row:SetFocused(true)
 				ShowBubble(true)
 			end
-			Slider:SetValue(Slider.Min + ((Slider.Max - Slider.Min) * X))
+			local Target = Slider.Min + ((Slider.Max - Slider.Min) * X)
+			if not Dual then
+				Slider:SetValue(Target)
+				return
+			end
+			if not ActiveThumb then
+				ActiveThumb = PickThumb(Target)
+			end
+			local Current = Slider.Value
+			if ActiveThumb == "Min" then
+				local Low = tonumber(Library:Round(math.clamp(Target, Slider.Min, Slider.Max), Slider.Rounding))
+				Slider:SetValue(math.min(Low, Current.Max - Slider.Gap), Current.Max)
+			elseif ActiveThumb == "Max" then
+				local High = tonumber(Library:Round(math.clamp(Target, Slider.Min, Slider.Max), Slider.Rounding))
+				Slider:SetValue(Current.Min, math.max(High, Current.Min + Slider.Gap))
+			end
 		end, function()
 			Dragging = false
+			ActiveThumb = nil
 			Row:SetFocused(false)
 			ShowBubble(false)
 		end, { Threshold = 8 })
@@ -20920,7 +21788,55 @@ ElementsTable.Slider = (function()
 			Func(Slider.Value)
 		end
 
-		function Slider:SetValue(Value)
+		function Slider:SetValue(Value, High)
+			if Dual then
+				local Low = Value
+				if type(Value) == "table" then
+					Low = Value.Min or Value.Low or Value[1]
+					High = Value.Max or Value.High or Value[2]
+				end
+				local Previous = self.Value
+				Low = tonumber(Low) or (Previous and Previous.Min) or Slider.Min
+				High = tonumber(High) or (Previous and Previous.Max) or Slider.Max
+				Low = math.clamp(Low, Slider.Min, Slider.Max)
+				High = math.clamp(High, Slider.Min, Slider.Max)
+				if Low > High then
+					Low, High = High, Low
+				end
+				if High - Low < Slider.Gap then
+					High = math.min(Low + Slider.Gap, Slider.Max)
+					Low = math.max(math.min(Low, High - Slider.Gap), Slider.Min)
+				end
+				Low = tonumber(Library:Round(Low, Slider.Rounding))
+				High = tonumber(Library:Round(High, Slider.Rounding))
+
+				self.Value = { Min = Low, Max = High }
+				local Range = Slider.Max - Slider.Min
+				local AlphaLow = (Low - Slider.Min) / Range
+				local AlphaHigh = (High - Slider.Min) / Range
+				Thumb.Position = UDim2.new(AlphaLow, 0, 0.5, 0)
+				ThumbHigh.Position = UDim2.new(AlphaHigh, 0, 0.5, 0)
+				Fill.Position = UDim2.fromScale(AlphaLow, 0)
+				Fill.Size = UDim2.fromScale(AlphaHigh - AlphaLow, 1)
+				Display.Text = tostring(Low) .. Slider.Suffix .. " - " .. tostring(High) .. Slider.Suffix
+				if BubbleLabel then
+					BubbleLabel.Text = tostring(Low) .. Slider.Suffix
+				end
+				if BubbleLabelHigh then
+					BubbleLabelHigh.Text = tostring(High) .. Slider.Suffix
+				end
+				if NumberBox then
+					NumberBox.Text = tostring(Low)
+				end
+				if NumberBoxHigh then
+					NumberBoxHigh.Text = tostring(High)
+				end
+
+				Library:SafeCallback(Slider.Callback, self.Value)
+				Library:SafeCallback(Slider.Changed, self.Value)
+				return
+			end
+
 			self.Value = tonumber(Library:Round(math.clamp(Value, Slider.Min, Slider.Max), Slider.Rounding))
 			local Alpha = (self.Value - Slider.Min) / (Slider.Max - Slider.Min)
 			Thumb.Position = UDim2.new(Alpha, 0, 0.5, 0)
@@ -20936,6 +21852,26 @@ ElementsTable.Slider = (function()
 
 			Library:SafeCallback(Slider.Callback, self.Value)
 			Library:SafeCallback(Slider.Changed, self.Value)
+		end
+
+		function Slider:SetMinValue(Value: number)
+			if Dual then
+				Slider:SetValue(math.min(Value, self.Value.Max - Slider.Gap), self.Value.Max)
+			end
+		end
+
+		function Slider:SetMaxValue(Value: number)
+			if Dual then
+				Slider:SetValue(self.Value.Min, math.max(Value, self.Value.Min + Slider.Gap))
+			end
+		end
+
+		function Slider:GetMinValue(): number?
+			return if Dual then self.Value.Min else nil
+		end
+
+		function Slider:GetMaxValue(): number?
+			return if Dual then self.Value.Max else nil
 		end
 
 		function Slider:Destroy()
@@ -21233,7 +22169,7 @@ ElementsTable.Segmented = (function()
 				local Item = { Frame = Frame, Option = Option, On = false }
 				table.insert(Buttons, Item)
 
-				Library.CreateItemHover(Frame, { Radius = 8 })
+				Library.CreateItemHover(Frame, { Radius = 8, InsetX = -12 })
 				Creator.AddGuarded(Frame, "MouseButton1Click", function()
 					Segmented:SetValue(Option.Value)
 				end)
@@ -21898,7 +22834,7 @@ ElementsTable.Dropdown = (function()
 					end
 				end
 
-				Library.CreateItemHover(Item.Frame, { Radius = 7 })
+				Library.CreateItemHover(Item.Frame, { Radius = 7, InsetX = Segmented and -12 or 0 })
 
 				function Item:Update(Immediate)
 					local On = IsSelected(Value)
@@ -22712,19 +23648,6 @@ local PickerKit = (function()
 		}
 
 		local Weights = { Swatch and 1.8 or 2.2, 1, 1, 1, 1.4 }
-		local SwatchCaption
-		if Swatch then
-			SwatchCaption = Label({
-				Text = "New",
-				TextSize = 10,
-				Weight = "Medium",
-				Tag = "SubText",
-				Size = UDim2.fromOffset(60, 12),
-				TextXAlignment = Enum.TextXAlignment.Center,
-				Parent = Dialog.Root,
-			})
-		end
-
 		function Fields:Layout()
 			local Slots
 			if self.Mode == "All" then
@@ -22793,9 +23716,6 @@ local PickerKit = (function()
 			Swatch.Position = UDim2.fromOffset(SwatchX, Y)
 			Swatch.Size = UDim2.fromOffset(SwatchW, 30)
 			Swatch.Visible = true
-			SwatchCaption.Position = UDim2.fromOffset(SwatchX, Y + 33)
-			SwatchCaption.Size = UDim2.fromOffset(SwatchW, 12)
-			SwatchCaption.Visible = true
 		end
 
 		function Fields:Refresh()
@@ -22869,6 +23789,125 @@ local PickerKit = (function()
 		return Fields
 	end
 
+	local function MakeSlots(Dialog, Session, X, Y, W, H)
+		local Radius = math.floor(H / 2)
+		local LeftW = math.floor(W / 2)
+		local RightW = W - LeftW
+
+		local function MakeSlot(SlotX, SlotW, Left, Static)
+			local Round = Left and Radius or 0
+			local Flat = Left and 0 or Radius
+
+			local Back = New("ImageLabel", {
+				Image = Components.Assets.Checker,
+				ImageTransparency = 0.45,
+				ScaleType = Enum.ScaleType.Tile,
+				TileSize = UDim2.fromOffset(40, 40),
+				BackgroundTransparency = 1,
+				Size = UDim2.fromOffset(SlotW, H),
+				Position = UDim2.fromOffset(SlotX, Y),
+				Parent = Dialog.Root,
+			}, {
+				SideCorner(Round, Flat, Round, Flat),
+			})
+
+			local Fill = New("Frame", {
+				Size = UDim2.fromScale(1, 1),
+				BackgroundColor3 = Session.Original,
+				BackgroundTransparency = Session.OriginalAlpha,
+				Parent = Back,
+			}, {
+				SideCorner(Round, Flat, Round, Flat),
+				Stroke("PickerBorder", 0.5),
+			})
+
+			if not Static then
+				Session:Bind(function()
+					Fill.BackgroundColor3 = Session:Current()
+					Fill.BackgroundTransparency = Session.Alpha
+				end)
+			end
+
+			return Back
+		end
+
+		return {
+			New = MakeSlot(X, LeftW, true, false),
+			Current = MakeSlot(X + LeftW, RightW, false, true),
+		}
+	end
+
+	local function MakeWheel(Dialog, Session, X, Y, Size, Radius, Thickness, KnobSize)
+		local Center = Size / 2
+		local Inner = Radius - Thickness / 2
+		local Outer = Radius + Thickness / 2
+		local Tolerance = 6
+		local CoarseStep = 5 / 360
+		local FineStep = 1 / 360
+
+		local Ring = New("ImageLabel", {
+			Size = UDim2.fromOffset(Size, Size),
+			Position = UDim2.fromOffset(X, Y),
+			BackgroundTransparency = 1,
+			Image = "rbxassetid://81989409322735",
+			ImageColor3 = Color3.new(1, 1, 1),
+			ImageTransparency = 0,
+			ScaleType = Enum.ScaleType.Stretch,
+			Parent = Dialog.Root,
+		})
+
+		for _, Edge in ipairs({ Outer - 1, Inner }) do
+			New("Frame", {
+				Size = UDim2.fromOffset(Edge * 2, Edge * 2),
+				AnchorPoint = Vector2.new(0.5, 0.5),
+				Position = UDim2.fromOffset(X + Center, Y + Center),
+				BackgroundTransparency = 1,
+				ZIndex = 3,
+				Parent = Dialog.Root,
+			}, {
+				Corner(Edge),
+				Stroke("PickerBorder", 0.4, 2),
+			})
+		end
+
+		local Thumb = MakeKnob(KnobSize)
+		Thumb.Parent = Dialog.Root
+
+		local function Measure(Sx, Sy)
+			local Dx = (Sx - 0.5) * Size
+			local Dy = (Sy - 0.5) * Size
+			return Dx, Dy, math.sqrt(Dx * Dx + Dy * Dy)
+		end
+
+		Creator.BindDrag(Ring, function(Sx, Sy)
+			local Dx, Dy = Measure(Sx, Sy)
+			local Turn = (math.atan2(Dx, -Dy) / (math.pi * 2)) % 1
+			Session:Set(math.clamp(Turn, 0, 0.999))
+		end, nil, {
+			Unclamped = true,
+			Gate = function(Sx, Sy)
+				local _, _, Distance = Measure(Sx, Sy)
+				return Distance >= Inner - Tolerance and Distance <= Outer + Tolerance
+			end,
+		})
+
+		Creator.Input.Hover(Ring, { Enum.UserInputType.MouseWheel }, function(State, Input)
+			if State ~= Enum.UserInputState.Change then
+				return
+			end
+			local Step = UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) and FineStep or CoarseStep
+			Session:Set((Session.Hue + Input.Position.Z * Step) % 1)
+		end)
+
+		Session:Bind(function()
+			local Angle = Session.Hue * math.pi * 2
+			Thumb.Position = UDim2.fromOffset(X + Center + Radius * math.sin(Angle), Y + Center - Radius * math.cos(Angle))
+			Thumb.BackgroundColor3 = Color3.fromHSV(Session.Hue, 1, 1)
+		end)
+
+		return Ring
+	end
+
 	local function MakeLabeledBox(Dialog, Title, X, Y, W, Commit)
 		MakeCaption(Dialog, Title, X, Y, W)
 		local Box = Components.Textbox(Dialog.Root, "Standard")
@@ -22889,6 +23928,8 @@ local PickerKit = (function()
 		MakeMap = MakeMap,
 		MakeSlider = MakeSlider,
 		MakePreview = MakePreview,
+		MakeSlots = MakeSlots,
+		MakeWheel = MakeWheel,
 		MakeFields = MakeFields,
 		MakeLabeledBox = MakeLabeledBox,
 		DialogOptions = DialogOptions,
@@ -22902,13 +23943,14 @@ ElementsTable.Colorpicker = (function()
 	Element.ClassType = "Dialog"
 
 	local Checker = PickerKit.Checker
-	local MakeCaption = PickerKit.MakeCaption
 	local MakePanel = PickerKit.MakePanel
 	local MakeKnob = PickerKit.MakeKnob
 	local MakeAction = PickerKit.MakeAction
 	local MakeMap = PickerKit.MakeMap
 	local MakeSlider = PickerKit.MakeSlider
 	local MakePreview = PickerKit.MakePreview
+	local MakeSlots = PickerKit.MakeSlots
+	local MakeWheel = PickerKit.MakeWheel
 	local MakeFields = PickerKit.MakeFields
 	local MakeLabeledBox = PickerKit.MakeLabeledBox
 	local DialogOptions = PickerKit.DialogOptions
@@ -23189,14 +24231,11 @@ ElementsTable.Colorpicker = (function()
 			local RightW = 410 - RightX
 			local PreviewY = MapY + MapSize + 8
 			local PreviewH = 36
-			local CaptionY = PreviewY + PreviewH + 4
 			local PreviewW = math.floor((MapSize - 8) / 2)
-			local PanelEnd = CaptionY + 14 + 12
+			local PanelEnd = PreviewY + PreviewH + 12
 			Dialog.Root.Size = UDim2.fromOffset(440, PanelEnd + 78)
 
 			MakePanel(Dialog, 20, PanelY, 400, PanelEnd - PanelY)
-			MakeCaption(Dialog, "CURRENT", MapX, CaptionY, PreviewW)
-			MakeCaption(Dialog, "NEW", MapX + PreviewW + 8, CaptionY, PreviewW)
 			MakePreview(Dialog, Session, MapX, PreviewY, PreviewW, PreviewH, 10, true)
 			MakePreview(Dialog, Session, MapX + PreviewW + 8, PreviewY, PreviewW, PreviewH, 10)
 			MakeMap(Dialog, Session, MapX, MapY, MapSize, MapSize, 8)
@@ -23267,10 +24306,14 @@ ElementsTable.Colorpicker = (function()
 
 			Dialog.Title.Text = Colorpicker.Title
 
+			local SlotY = 56
+			local SlotH = 28
+			local SlotW = 148
+			local SlotX = math.floor((Width - SlotW) / 2)
 			local RingSize = 220
 			local RingRadius = 98
 			local RingX = math.floor((Width - RingSize) / 2)
-			local RingY = 56
+			local RingY = SlotY + SlotH + 16
 			local Center = RingSize / 2
 			local RingThickness = 20
 
@@ -23281,61 +24324,18 @@ ElementsTable.Colorpicker = (function()
 			local FieldsY = NextY
 			local PanelEnd = FieldsY + 46 + 10
 
-			MakePanel(Dialog, 12, RingY - 8, Width - 24, PanelEnd - (RingY - 8))
-
-			local Ring = New("ImageLabel", {
-				Size = UDim2.fromOffset(RingSize, RingSize),
-				Position = UDim2.fromOffset(RingX, RingY),
-				BackgroundTransparency = 1,
-				Image = "rbxassetid://81989409322735",
-				ImageColor3 = Color3.new(1, 1, 1),
-				ImageTransparency = 0,
-				ScaleType = Enum.ScaleType.Stretch,
-				Parent = Dialog.Root,
-			})
-
-			for _, Radius in ipairs({ RingRadius + RingThickness / 2 - 1, RingRadius - RingThickness / 2 }) do
-				New("Frame", {
-					Size = UDim2.fromOffset(Radius * 2, Radius * 2),
-					AnchorPoint = Vector2.new(0.5, 0.5),
-					Position = UDim2.fromOffset(RingX + Center, RingY + Center),
-					BackgroundTransparency = 1,
-					ZIndex = 3,
-					Parent = Dialog.Root,
-				}, {
-					Corner(Radius),
-					Stroke("PickerBorder", 0.4, 2),
-				})
-			end
+			MakePanel(Dialog, 12, SlotY - 8, Width - 24, PanelEnd - (SlotY - 8))
+			MakeSlots(Dialog, Session, SlotX, SlotY, SlotW, SlotH)
+			MakeWheel(Dialog, Session, RingX, RingY, RingSize, RingRadius, RingThickness, 20)
 
 			local MapSize = 112
 			MakeMap(Dialog, Session, RingX + Center - MapSize / 2, RingY + Center - MapSize / 2, MapSize, MapSize, 12)
-
-			local Thumb = MakeKnob(20)
-			Thumb.Parent = Dialog.Root
-
-			Creator.BindDrag(Ring, function(Sx, Sy)
-				local Dx = Sx - 0.5
-				local Dy = Sy - 0.5
-				local Inner = (RingRadius - RingThickness / 2) / RingSize
-				if Dx * Dx + Dy * Dy < Inner * Inner then
-					return
-				end
-				local Turn = (math.atan2(Dx, -Dy) / (math.pi * 2)) % 1
-				Session:Set(math.clamp(Turn, 0, 0.999))
-			end)
-
-			Session:Bind(function()
-				local Angle = Session.Hue * math.pi * 2
-				Thumb.Position = UDim2.fromOffset(RingX + Center + RingRadius * math.sin(Angle), RingY + Center - RingRadius * math.cos(Angle))
-				Thumb.BackgroundColor3 = Color3.fromHSV(Session.Hue, 1, 1)
-			end)
 
 			if Session.WithAlpha then
 				MakeSlider(Dialog, Session, "Alpha", 20, RingY + RingSize + 14, InnerW, 10, false)
 			end
 
-			MakeFields(Dialog, Session, 20, FieldsY, InnerW, "All", true)
+			MakeFields(Dialog, Session, 20, FieldsY, InnerW, "All")
 
 			Dialog.Root.Size = UDim2.fromOffset(Width, PanelEnd + 12 + 58)
 			Session:Refresh()
@@ -23474,6 +24474,8 @@ ElementsTable.GradientPicker = (function()
 	local MakeAction = PickerKit.MakeAction
 	local MakeMap = PickerKit.MakeMap
 	local MakeSlider = PickerKit.MakeSlider
+	local MakeSlots = PickerKit.MakeSlots
+	local MakeWheel = PickerKit.MakeWheel
 	local MakeFields = PickerKit.MakeFields
 	local MakeLabeledBox = PickerKit.MakeLabeledBox
 	local DialogOptions = PickerKit.DialogOptions
@@ -24172,7 +25174,7 @@ ElementsTable.GradientPicker = (function()
 			local InputX = (WithAlpha and AlphaX + 12 or HueX + 12) + 16
 			local InputW = Width - 24 - InputX
 			local PreviewY = MapY + MapH + 8
-			local PanelAEnd = PreviewY + 26 + 4 + 14 + 12
+			local PanelAEnd = PreviewY + 26 + 12
 			local PanelGY = PanelAEnd + 8
 			local BarH = 24
 			local BarY = PanelGY + 14
@@ -24239,8 +25241,6 @@ ElementsTable.GradientPicker = (function()
 			end)
 
 			local PreviewW = math.floor((MapW - 8) / 2)
-			MakeCaption(Dialog, "CURRENT", MapX, PreviewY + 26 + 4, PreviewW)
-			MakeCaption(Dialog, "NEW", MapX + PreviewW + 8, PreviewY + 26 + 4, PreviewW)
 			local Frozen = {
 				Value = Session.Snapshot.Value,
 				TransparencyValue = Session.Snapshot.TransparencyValue,
@@ -24277,11 +25277,15 @@ ElementsTable.GradientPicker = (function()
 
 			local BarH = 22
 
+			local SlotY = 56
+			local SlotH = 28
+			local SlotW = 148
+			local SlotX = math.floor((Width - SlotW) / 2)
 			local RingSize = 180
 			local RingRadius = 80
 			local RingThickness = 16
 			local RingX = math.floor((Width - RingSize) / 2)
-			local RingY = 56
+			local RingY = SlotY + SlotH + 16
 			local Center = RingSize / 2
 
 			local NextY = RingY + RingSize + 14
@@ -24294,65 +25298,19 @@ ElementsTable.GradientPicker = (function()
 			local FieldsY = MetaY + 42 + 12
 			local PanelEnd = FieldsY + 46 + 10
 
-			MakePanel(Dialog, 12, RingY - 8, Width - 24, PanelEnd - (RingY - 8))
+			MakePanel(Dialog, 12, SlotY - 8, Width - 24, PanelEnd - (SlotY - 8))
 			CommonTop(Dialog, Session, 20, BarY, InnerW, BarH)
-
-			local Ring = New("ImageLabel", {
-				Size = UDim2.fromOffset(RingSize, RingSize),
-				Position = UDim2.fromOffset(RingX, RingY),
-				BackgroundTransparency = 1,
-				Image = "rbxassetid://81989409322735",
-				ImageColor3 = Color3.new(1, 1, 1),
-				ImageTransparency = 0,
-				ScaleType = Enum.ScaleType.Stretch,
-				Parent = Dialog.Root,
-			})
-
-			for _, Radius in ipairs({ RingRadius + RingThickness / 2 - 1, RingRadius - RingThickness / 2 }) do
-				New("Frame", {
-					Size = UDim2.fromOffset(Radius * 2, Radius * 2),
-					AnchorPoint = Vector2.new(0.5, 0.5),
-					Position = UDim2.fromOffset(RingX + Center, RingY + Center),
-					BackgroundTransparency = 1,
-					ZIndex = 3,
-					Parent = Dialog.Root,
-				}, {
-					Corner(Radius),
-					Stroke("PickerBorder", 0.4, 2),
-				})
-			end
+			MakeSlots(Dialog, Session, SlotX, SlotY, SlotW, SlotH)
+			MakeWheel(Dialog, Session, RingX, RingY, RingSize, RingRadius, RingThickness, 18)
 
 			local MapSize = 92
 			MakeMap(Dialog, Session, RingX + Center - MapSize / 2, RingY + Center - MapSize / 2, MapSize, MapSize, 10)
-
-			local Thumb = MakeKnob(18)
-			Thumb.Parent = Dialog.Root
-
-			Creator.BindDrag(Ring, function(Sx, Sy)
-				local Dx = Sx - 0.5
-				local Dy = Sy - 0.5
-				local Inner = (RingRadius - RingThickness / 2) / RingSize
-				if Dx * Dx + Dy * Dy < Inner * Inner then
-					return
-				end
-				local Turn = (math.atan2(Dx, -Dy) / (math.pi * 2)) % 1
-				Session:Set(math.clamp(Turn, 0, 0.999))
-			end)
-
-			Session:Bind(function()
-				local Angle = Session.Hue * math.pi * 2
-				Thumb.Position = UDim2.fromOffset(
-					RingX + Center + RingRadius * math.sin(Angle),
-					RingY + Center - RingRadius * math.cos(Angle)
-				)
-				Thumb.BackgroundColor3 = Color3.fromHSV(Session.Hue, 1, 1)
-			end)
 
 			if Session.WithAlpha then
 				MakeSlider(Dialog, Session, "Alpha", 20, RingY + RingSize + 14, InnerW, 10, false)
 			end
 
-			MakeFields(Dialog, Session, 20, FieldsY, InnerW, "All", true)
+			MakeFields(Dialog, Session, 20, FieldsY, InnerW, "All")
 
 			if GradientPicker.ShowRotation then
 				MakePosition(Dialog, Session, GradientPicker, 20, MetaY, 96)
@@ -26417,6 +27375,453 @@ ElementsTable.Viewport = (function()
 	return Element
 end)()
 
+ElementsTable.Image = (function()
+	local Element = {}
+	Element.__index = Element
+	Element.__type = "Image"
+	Element.ClassType = "Display"
+
+	local BoxInset = 28
+	local BoxPadding = 20
+
+	local Variants = { Default = true, Borderless = true }
+
+	local function ResolveVariant(Value: any): string
+		if type(Value) == "string" then
+			for Name in Variants do
+				if Name:lower() == Value:lower() then
+					return Name
+				end
+			end
+		end
+		return "Default"
+	end
+
+	local function ParseAspectRatio(Ratio: any): number?
+		if type(Ratio) == "number" then
+			return Ratio > 0 and Ratio or nil
+		end
+		if type(Ratio) == "string" then
+			local Width, Height = Ratio:match("^%s*(%d+%.?%d*)%s*:%s*(%d+%.?%d*)%s*$")
+			Width, Height = tonumber(Width), tonumber(Height)
+			if Width and Height and Width > 0 and Height > 0 then
+				return Width / Height
+			end
+		end
+		return nil
+	end
+
+	local TextureCache: { [string]: string } = {}
+
+	local function GetAssetFunction(): ((Path: string) -> string)?
+		return getcustomasset or getsynasset
+	end
+
+	local function DownloadTexture(Url: string): string?
+		local Success, Body = pcall(function()
+			return game:HttpGet(Url)
+		end)
+		if Success and type(Body) == "string" and #Body > 0 then
+			return Body
+		end
+		local Request = request or http_request or (syn and syn.request)
+		if Request then
+			local RequestSuccess, Response = pcall(Request, { Url = Url, Method = "GET" })
+			if RequestSuccess and Response and type(Response.Body) == "string" and #Response.Body > 0 then
+				return Response.Body
+			end
+		end
+		return nil
+	end
+
+	local function LoadUrl(Library: any, Url: string): string?
+		if TextureCache[Url] then
+			return TextureCache[Url]
+		end
+		local GetAsset = GetAssetFunction()
+		if not (GetAsset and writefile) then
+			return nil
+		end
+		local Body = DownloadTexture(Url)
+		if not Body then
+			return nil
+		end
+		local Folder = Library:GetFolder("images")
+		Library:EnsureFolder(Folder)
+		local Extension = string.match(string.gsub(Url, "[%?#].*$", ""), "%.(%w+)$") or "png"
+		local Name = string.gsub(Url, "[^%w]", "_")
+		local FilePath = Folder .. "/" .. string.sub(Name, -60) .. "." .. Extension
+		local Written = pcall(writefile, FilePath, Body)
+		if not Written then
+			return nil
+		end
+		local Loaded, Asset = pcall(GetAsset, FilePath)
+		if Loaded and type(Asset) == "string" then
+			TextureCache[Url] = Asset
+			return Asset
+		end
+		return nil
+	end
+
+	local function LoadFile(Path: string): string?
+		local GetAsset = GetAssetFunction()
+		if not (GetAsset and isfile) then
+			return nil
+		end
+		local Success, Asset = pcall(function()
+			if isfile(Path) then
+				return GetAsset(Path)
+			end
+			return nil
+		end)
+		if Success and type(Asset) == "string" then
+			return Asset
+		end
+		return nil
+	end
+
+	local function IsDirectAsset(Value: string): boolean
+		return Value:match("^rbxasset") ~= nil or Value:match("^rbxthumb://") ~= nil or Value:match("^rbxgameasset://") ~= nil
+	end
+
+	local function IsUrl(Value: string): boolean
+		return Value:match("^https?://") ~= nil
+	end
+
+	local function ResolveRadius(Value: any): number
+		if type(Value) == "number" then
+			return math.max(Value, 0)
+		end
+		return 0
+	end
+
+	function Element:New(IdxOrConfig, MaybeConfig)
+		local Library = self.Library
+		local Idx, Config
+		if type(IdxOrConfig) == "string" then
+			Idx, Config = IdxOrConfig, MaybeConfig
+		else
+			Config = IdxOrConfig
+		end
+		Config = Config or {}
+
+		local Image = {
+			Type = "Image",
+			Texture = Config.Texture or "",
+			AspectRatio = Config.AspectRatio,
+			Corner = Config.Corner,
+			IndividualCorner = Config.IndividualCorner,
+			Height = Config.Height or 200,
+			MaxHeight = Config.MaxHeight,
+			MinHeight = Config.MinHeight,
+			MaxWidth = Config.MaxWidth,
+			Variant = ResolveVariant(Config.Variant),
+			Callback = Config.OnClick or Config.Callback,
+		}
+
+		if type(Config.ClickAble) == "boolean" then
+			Image.ClickAble = Config.ClickAble
+		else
+			Image.ClickAble = Image.Callback ~= nil
+		end
+
+		local Row = MakeRow(self, Config, false)
+		Bind(Image, Row)
+		if not Config.Title or Config.Title == "" then
+			Row.TitleRow.Visible = false
+			Row.Padding.PaddingTop = UDim.new(0, 0)
+		end
+
+		local Connections: { RBXScriptConnection } = {}
+		local Ratio = ParseAspectRatio(Image.AspectRatio)
+		local TextureToken = 0
+
+		local Holder = New("Frame", {
+			Name = "ImageHolder",
+			Size = UDim2.new(1, -BoxInset, 0, Image.Height),
+			AnchorPoint = Vector2.new(0.5, 1),
+			Position = UDim2.new(0.5, 0, 1, -10),
+			BackgroundTransparency = 1,
+			Parent = Row.Content,
+		})
+
+		local PictureStroke = Stroke("ElementBorder", 0.5)
+		PictureStroke.Enabled = Image.Variant ~= "Borderless"
+
+		local Picture = New("ImageButton", {
+			Name = "ImagePicture",
+			Size = UDim2.fromScale(1, 1),
+			BackgroundTransparency = 1,
+			AutoButtonColor = false,
+			Active = Image.ClickAble,
+			ScaleType = Enum.ScaleType.Crop,
+			Parent = Holder,
+		}, {
+			PictureStroke,
+		})
+
+		local RoundedCorner = Instance.new("UICorner")
+		RoundedCorner.Parent = Picture
+
+		local function SetPicture(Source: string, Offset: Vector2?, Size: Vector2?, Fit: boolean?)
+			Picture.Image = Source
+			Picture.ImageRectOffset = Offset or Vector2.zero
+			Picture.ImageRectSize = Size or Vector2.zero
+			Picture.ScaleType = if Fit then Enum.ScaleType.Fit else Enum.ScaleType.Crop
+		end
+
+		local function ApplyTexture(Texture: any)
+			TextureToken += 1
+			local Token = TextureToken
+
+			if Texture == nil or Texture == "" then
+				SetPicture("")
+				return
+			end
+
+			if typeof(Texture) == "Instance" then
+				if Texture:IsA("ImageLabel") or Texture:IsA("ImageButton") then
+					SetPicture(Texture.Image, Texture.ImageRectOffset, Texture.ImageRectSize)
+				end
+				return
+			end
+
+			if type(Texture) == "table" then
+				SetPicture(Texture.Image or "", Texture.ImageRectOffset, Texture.ImageRectSize, Texture.ImageRectSize ~= nil and Texture.ImageRectSize ~= Vector2.zero)
+				return
+			end
+
+			if type(Texture) == "number" then
+				SetPicture("rbxassetid://" .. Texture)
+				return
+			end
+
+			if type(Texture) ~= "string" then
+				SetPicture("")
+				return
+			end
+
+			if Texture:match("^%d+$") then
+				SetPicture("rbxassetid://" .. Texture)
+				return
+			end
+
+			if IsDirectAsset(Texture) then
+				SetPicture(Texture)
+				return
+			end
+
+			if IsUrl(Texture) then
+				local Cached = TextureCache[Texture]
+				if Cached then
+					SetPicture(Cached)
+					return
+				end
+				SetPicture("")
+				task.spawn(function()
+					local Asset = LoadUrl(Library, Texture)
+					if Asset and Token == TextureToken and Picture.Parent then
+						SetPicture(Asset)
+					end
+				end)
+				return
+			end
+
+			if Texture:match("^%w+:") then
+				local Data = Library:GetIconData(Texture)
+				if Data then
+					SetPicture(Data.Image, Data.ImageRectOffset, Data.ImageRectSize, true)
+					return
+				end
+			end
+
+			local FileAsset = LoadFile(Texture)
+			if FileAsset then
+				SetPicture(FileAsset)
+				return
+			end
+
+			local BareData = Library:GetIconData(Texture)
+			if BareData then
+				SetPicture(BareData.Image, BareData.ImageRectOffset, BareData.ImageRectSize, true)
+				return
+			end
+
+			SetPicture(Texture)
+		end
+
+		local function ApplyCorner()
+			local Base = ResolveRadius(Image.Corner)
+			local Individual = Image.IndividualCorner
+
+			local function Pick(Key: string): number
+				if type(Individual) == "table" and type(Individual[Key]) == "number" then
+					return math.max(Individual[Key], 0)
+				end
+				return Base
+			end
+
+			RoundedCorner.CornerRadius = UDim.new(0, Base)
+			RoundedCorner.TopLeftRadius = UDim.new(0, Pick("TopLeft"))
+			RoundedCorner.TopRightRadius = UDim.new(0, Pick("TopRight"))
+			RoundedCorner.BottomLeftRadius = UDim.new(0, Pick("BottomLeft"))
+			RoundedCorner.BottomRightRadius = UDim.new(0, Pick("BottomRight"))
+		end
+
+		local function SetBox(Width: number?, Height: number)
+			if Width then
+				Holder.Size = UDim2.fromOffset(Width, Height)
+			else
+				Holder.Size = UDim2.new(1, -BoxInset, 0, Height)
+			end
+			Row.Padding.PaddingBottom = UDim.new(0, BoxPadding + Height)
+		end
+
+		local function RecalculateAspect()
+			local Available = Row.Content.AbsoluteSize.X - BoxInset
+			if Available <= 0 then
+				SetBox(nil, Image.Height)
+				return
+			end
+
+			local Width = Available
+			if type(Image.MaxWidth) == "number" then
+				Width = math.min(Width, math.max(Image.MaxWidth, 1))
+			end
+
+			local Height = Image.Height
+			if Ratio then
+				Height = Width / Ratio
+			end
+
+			if type(Image.MaxHeight) == "number" and Height > Image.MaxHeight then
+				Height = math.max(Image.MaxHeight, 1)
+				if Ratio then
+					Width = math.min(Width, Height * Ratio)
+				end
+			end
+
+			if type(Image.MinHeight) == "number" and Height < Image.MinHeight then
+				Height = Image.MinHeight
+			end
+
+			Height = math.floor(Height)
+			if Width >= Available then
+				SetBox(nil, Height)
+			else
+				SetBox(math.floor(Width), Height)
+			end
+		end
+
+		table.insert(Connections, Creator.AddSignal(Row.Content:GetPropertyChangedSignal("AbsoluteSize"), RecalculateAspect))
+
+		Creator.AddGuarded(Picture, "MouseButton1Click", function()
+			if Image.ClickAble and Image.Callback then
+				Library:SafeCallback(Image.Callback)
+			end
+		end)
+
+		ApplyTexture(Image.Texture)
+		ApplyCorner()
+		RecalculateAspect()
+		task.defer(RecalculateAspect)
+
+		function Image:SetTexture(Texture: any)
+			Image.Texture = Texture
+			ApplyTexture(Texture)
+		end
+
+		function Image:GetTexture()
+			return Image.Texture
+		end
+
+		function Image:SetAspectRatio(Value: any)
+			Image.AspectRatio = Value
+			Ratio = ParseAspectRatio(Value)
+			RecalculateAspect()
+		end
+
+		function Image:GetAspectRatio()
+			return Image.AspectRatio
+		end
+
+		function Image:SetVariant(Value: string)
+			Image.Variant = ResolveVariant(Value)
+			PictureStroke.Enabled = Image.Variant ~= "Borderless"
+		end
+
+		function Image:GetVariant(): string
+			return Image.Variant
+		end
+
+		function Image:SetHeight(Value: number)
+			Image.Height = Value
+			RecalculateAspect()
+		end
+
+		function Image:SetMaxHeight(Value: number?)
+			Image.MaxHeight = Value
+			RecalculateAspect()
+		end
+
+		function Image:SetMinHeight(Value: number?)
+			Image.MinHeight = Value
+			RecalculateAspect()
+		end
+
+		function Image:SetMaxWidth(Value: number?)
+			Image.MaxWidth = Value
+			RecalculateAspect()
+		end
+
+		function Image:SetCorner(Value: number?)
+			Image.Corner = Value
+			ApplyCorner()
+		end
+
+		function Image:SetIndividualCorner(Value: { [string]: number? }?)
+			Image.IndividualCorner = Value
+			ApplyCorner()
+		end
+
+		function Image:SetClickAble(Value: boolean)
+			Image.ClickAble = Value == true
+			Picture.Active = Image.ClickAble
+		end
+
+		function Image:GetClickAble(): boolean
+			return Image.ClickAble
+		end
+
+		function Image:SetCallback(Callback: (() -> ())?)
+			Image.Callback = Callback
+		end
+
+		function Image:SetOnClick(Callback: (() -> ())?)
+			Image.Callback = Callback
+		end
+
+		function Image:Destroy()
+			for _, Connection in Connections do
+				Connection:Disconnect()
+			end
+			table.clear(Connections)
+			Row:Destroy()
+			if Idx then
+				Library.Options[Idx] = nil
+			end
+		end
+
+		if Idx then
+			Library.Options[Idx] = Image
+		end
+
+		return Image
+	end
+
+	return Element
+end)()
+
 ElementsTable.Space = (function()
 	local Element = {}
 	Element.__index = Element
@@ -26474,6 +27879,195 @@ ElementsTable.Space = (function()
 		Holder:QueueRefresh()
 
 		return Space
+	end
+
+	return Element
+end)()
+
+ElementsTable.Divider = (function()
+	local Element = {}
+	Element.__index = Element
+	Element.__type = "Divider"
+	Element.ClassType = "Layout"
+	Element.NoIdx = true
+	Element.StringConfig = true
+
+	local Alignments = { Left = true, Center = true, Right = true }
+	local EdgeLength = 20
+
+	function Element:Update()
+		local Label = self.Label
+		local LineA = self.LineA
+		local LineB = self.LineB
+		local Total = self.Content.AbsoluteSize.X
+
+		if self.Text == "" then
+			Label.Visible = false
+			LineB.Visible = false
+			LineA.Visible = true
+			LineA.Position = UDim2.fromScale(0, 0.5)
+			LineA.Size = UDim2.new(1, 0, 0, 1)
+			return
+		end
+
+		local TextWidth = math.ceil(Label.TextBounds.X)
+		local Free = math.max(0, Total - TextWidth - self.Gap * 2)
+		local LeftLength
+		local RightLength
+
+		if self.Align == "Left" then
+			LeftLength = math.min(Free, EdgeLength)
+			RightLength = Free - LeftLength
+		elseif self.Align == "Right" then
+			RightLength = math.min(Free, EdgeLength)
+			LeftLength = Free - RightLength
+		else
+			LeftLength = math.floor(Free / 2)
+			RightLength = Free - LeftLength
+		end
+
+		Label.Visible = true
+		Label.Position = UDim2.new(0, LeftLength + self.Gap, 0.5, 0)
+
+		LineA.Visible = LeftLength > 0
+		LineA.Position = UDim2.fromScale(0, 0.5)
+		LineA.Size = UDim2.fromOffset(LeftLength, 1)
+
+		LineB.Visible = RightLength > 0
+		LineB.AnchorPoint = Vector2.new(1, 0.5)
+		LineB.Position = UDim2.fromScale(1, 0.5)
+		LineB.Size = UDim2.fromOffset(RightLength, 1)
+	end
+
+	function Element:SetText(Value)
+		self.Text = if Value == nil then "" else tostring(Value)
+		self.Label.Text = self.Text
+		self:Update()
+	end
+
+	function Element:GetText()
+		return self.Text
+	end
+
+	function Element:SetAlign(Value)
+		self.Align = if Alignments[Value] then Value else "Center"
+		self:Update()
+	end
+
+	function Element:SetHeight(Value)
+		self.Height = math.max(1, tonumber(Value) or 1)
+		self.Clip.Size = UDim2.new(1, 0, 0, self.Height)
+	end
+
+	function Element:SetVisible(Value)
+		self.Clip.Visible = Value and true or false
+	end
+
+	function Element:GetVisible()
+		return self.Clip.Visible
+	end
+
+	function Element:Destroy()
+		Components.Rows[self.Clip] = nil
+		self.Clip:Destroy()
+	end
+
+	function Element:New(Config)
+		if type(Config) == "string" then
+			Config = { Text = Config }
+		end
+		Config = Config or {}
+
+		local Holder = self.Holder
+		local Text = Config.Text or Config.Title
+		Text = if Text == nil then "" else tostring(Text)
+
+		local Divider = setmetatable({
+			Type = "Divider",
+			IsSpace = true,
+			Id = 0,
+			Home = Holder,
+			Section = Holder,
+			Text = Text,
+			Align = if Alignments[Config.Align or Config.Alignment] then Config.Align or Config.Alignment else "Center",
+			Gap = math.max(0, tonumber(Config.Gap) or 10),
+			Height = 0,
+		}, Element)
+
+		local Inset = math.max(0, tonumber(Config.Inset) or 14)
+		local Transparency = tonumber(Config.Transparency) or 0.85
+
+		Divider.Clip = New("Frame", {
+			Name = "Divider",
+			Size = UDim2.new(1, 0, 0, 0),
+			BackgroundTransparency = 1,
+			LayoutOrder = Holder:NextOrder(),
+			Parent = Holder.Container,
+		})
+
+		Divider.Content = New("Frame", {
+			Position = UDim2.fromOffset(Inset, 0),
+			Size = UDim2.new(1, -Inset * 2, 1, 0),
+			BackgroundTransparency = 1,
+			Parent = Divider.Clip,
+		})
+
+		Divider.LineA = New("Frame", {
+			Name = "LineA",
+			AnchorPoint = Vector2.new(0, 0.5),
+			Position = UDim2.fromScale(0, 0.5),
+			Size = UDim2.new(1, 0, 0, 1),
+			BackgroundTransparency = Transparency,
+			Parent = Divider.Content,
+			ThemeTag = {
+				BackgroundColor3 = "ElementBorder",
+			},
+		})
+
+		Divider.LineB = New("Frame", {
+			Name = "LineB",
+			AnchorPoint = Vector2.new(1, 0.5),
+			Position = UDim2.fromScale(1, 0.5),
+			Size = UDim2.fromOffset(0, 1),
+			BackgroundTransparency = Transparency,
+			Visible = false,
+			Parent = Divider.Content,
+			ThemeTag = {
+				BackgroundColor3 = "ElementBorder",
+			},
+		})
+
+		Divider.Label = Label({
+			Name = "Text",
+			Text = Text,
+			TextSize = Config.TextSize or 12,
+			Weight = Config.Weight or "Medium",
+			Tag = Config.Tag or "SubText",
+			AnchorPoint = Vector2.new(0, 0.5),
+			AutomaticSize = Enum.AutomaticSize.X,
+			Size = UDim2.new(0, 0, 1, 0),
+			Visible = Text ~= "",
+			Parent = Divider.Content,
+		})
+
+		Divider:SetHeight(Config.Height or (if Text == "" then 16 else 28))
+
+		Components.Rows[Divider.Clip] = Divider
+
+		Creator.AddSignal(Divider.Content:GetPropertyChangedSignal("AbsoluteSize"), function()
+			Divider:Update()
+		end)
+		Creator.AddSignal(Divider.Label:GetPropertyChangedSignal("TextBounds"), function()
+			Divider:Update()
+		end)
+		Creator.AddSignal(Divider.Clip:GetPropertyChangedSignal("Visible"), function()
+			Holder:QueueRefresh()
+		end)
+
+		Divider:Update()
+		Holder:QueueRefresh()
+
+		return Divider
 	end
 
 	return Element
@@ -27525,7 +29119,7 @@ end
 
 local function MountElement(ElementComponent)
 	Elements["Add" .. ElementComponent.__type] = function(self, Idx, Config)
-		if ElementComponent.NoIdx and (type(Idx) == "table" or type(Idx) == "number") then
+		if ElementComponent.NoIdx and (type(Idx) == "table" or type(Idx) == "number" or (ElementComponent.StringConfig and type(Idx) == "string")) then
 			Config = Idx
 			Idx = nil
 		end
@@ -27733,8 +29327,6 @@ export type IntroOptions = {
 	Corner: number?,
 	Size: UDim2?,
 }
-
-local ContentProvider = GetService("ContentProvider")
 
 local IntroModule = {
 	Active = false,
@@ -28316,6 +29908,19 @@ function Library:CreateWindow(Config)
 	Library.Background:Mount(Window)
 	Library.Events.WindowCreated:Fire(Window)
 	IntroModule.Built = true
+	Creator.SetFastFlag("WindowCreated", true)
+
+	if IntroModule.Active then
+		local Connection
+		Connection = Library.Events.IntroFinished:Connect(function()
+			Connection:Disconnect()
+			Creator.SetFastFlag("IntroFinished", true)
+			Creator.SetFastFlag("WindowLoaded", true)
+		end)
+	else
+		Creator.SetFastFlag("IntroFinished", true)
+		Creator.SetFastFlag("WindowLoaded", true)
+	end
 
 	if Library.LockInside then
 		Window:SetLockInside(true, true)
@@ -28458,7 +30063,9 @@ function Library:SetHoverStyle(Value)
 	end
 end
 
-Library.MiniMessage = true
+Library.ColorText = true
+Library.ColorFormats = { MiniMessage = true, BBCode = true, ANSI = true, Bukkit = true, IRC = true }
+Library.LegacyAmpersand = false
 Library.ColorpickerStyle = "Chromium"
 Library.ColorpickerStyles = { "Fluent", "Chromium", "Wheel" }
 Library.GradientPickerStyle = "Chromium"
@@ -28795,6 +30402,7 @@ function Library:Destroy()
 	Library.ThemeChanged:DisconnectAll()
 	Acrylic.Destroy()
 	Creator.Reset()
+	Creator.ClearFastFlags()
 	NotificationModule:Destroy()
 	ToastModule:Destroy()
 	Library.GUI:Destroy()
@@ -29636,8 +31244,6 @@ function Library:GetCustomFonts()
 	end
 	return List
 end
-
-local AssetService = GetService("AssetService")
 
 -- Animated Background Made by my Tunisian friend
 local BackgroundManager = {
@@ -32903,6 +34509,9 @@ local SaveManager = {} do
 		CheckGroup = Simple("CheckGroup", "Value", IsTable),
 		Slider = {
 			Save = function(Idx, Object)
+				if type(Object.Value) == "table" then
+					return { Type = "Slider", Idx = Idx, Value = { Min = Object.Value.Min, Max = Object.Value.Max } }
+				end
 				return { Type = "Slider", Idx = Idx, Value = tostring(Object.Value) }
 			end,
 			Load = function(Idx, Data)
@@ -34295,6 +35904,26 @@ do
 		Library:Emit(Name, ...)
 	end
 
+	function Api:DefineFastFlagsUsage(Definitions: Dict): number
+		return Creator.DefineFastFlagsUsage(Definitions)
+	end
+
+	function Api:GetFastFlag(Name: string): any
+		return Creator.GetFastFlag(Name)
+	end
+
+	function Api:SetFastFlag(Name: string, Value: any)
+		Creator.SetFastFlag(Name, Value)
+	end
+
+	function Api:ObserveFastFlag(Name: string, Callback: (Value: any, Name: string) -> (), Immediate: boolean?): () -> ()
+		return self:Track(Creator.ObserveFastFlag(Name, Callback, Immediate), "fastflag-observer")
+	end
+
+	function Api:WaitForFastFlag(Name: string, Timeout: number?): any
+		return Creator.WaitForFastFlag(Name, Timeout)
+	end
+
 	function Api:Capability(Name: string)
 		local Record = self.Record
 		if not table.find(Record.Capabilities, Name) then
@@ -35250,9 +36879,6 @@ local LocalizationManager = (function()
 	type BatchItem = { Source: string, Text: string, Tags: { string } }
 	type Slicer = (number?) -> boolean
 
-
-	local HttpService: HttpService = game:GetService("HttpService")
-
 	local Languages: { LanguageInfo } = {
 		{ Code = "en", Name = "English" }, { Code = "vi", Name = "Tiếng Việt" },
 		{ Code = "zh-cn", Name = "简体中文" }, { Code = "zh-tw", Name = "繁體中文" },
@@ -35413,6 +37039,8 @@ local LocalizationManager = (function()
 		th = { Title = "ภาษา", Start = "กำลังแปลเป็น %s...", Done = "แปลเสร็จสิ้น (%s)", Fail = "แปลไม่สำเร็จ (%s) จะลองใหม่เร็วๆ นี้" },
 	}
 
+	local BuiltInNoTranslate: { string } = { "Fluent", "MacOS" }
+
 	local NoTranslateKeys: { [string]: boolean } = {
 		notranslations = true,
 		notranslation = true,
@@ -35520,7 +37148,7 @@ local LocalizationManager = (function()
 		function LocalizationEngine:ReportError(Message: any)
 			self.LastError = tostring(Message)
 			pcall(function()
-				Library:Toast({ Text = self.LastError, Type = "Warning", Duration = 4 })
+				Library:InternalToast({ Text = self.LastError, Type = "Warning", Duration = 4 })
 			end)
 			local Config = self.Config
 			if Config and type(Config.OnError) == "function" then
@@ -36312,7 +37940,7 @@ local LocalizationManager = (function()
 			end
 			local ToastTypes = { Start = "Info", Done = "Success", Fail = "Warning" }
 			local Success, Notification = pcall(function()
-				return Library:Notify({
+				return Library:InternalNotify({
 					Title = PickMessage("Title"),
 					Content = string.format(PickMessage(Kind), Language:upper()),
 					Duration = Kind == "Fail" and 6 or 4,
@@ -36888,7 +38516,7 @@ local LocalizationManager = (function()
 			self.Engine:ReportError(Message)
 		else
 			pcall(function()
-				self.Library:Toast({ Text = tostring(Message), Type = "Warning", Duration = 4 })
+				self.Library:InternalToast({ Text = tostring(Message), Type = "Warning", Duration = 4 })
 			end)
 		end
 	end
@@ -36997,6 +38625,9 @@ local LocalizationManager = (function()
 		Options.CacheFile = self:GetCachePath()
 
 		local Codes: { string }, Terms: { string }, Exact: { string } = {}, {}, {}
+		for _, Term in ipairs(BuiltInNoTranslate) do
+			table.insert(Terms, Term)
+		end
 		for _, Term in ipairs(Options.NoTranslations or {}) do
 			table.insert(Terms, Term)
 		end
