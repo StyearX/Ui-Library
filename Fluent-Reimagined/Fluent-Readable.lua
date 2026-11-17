@@ -1403,6 +1403,7 @@ local Library = {
 	},
 	PanelBackings = setmetatable({}, { __mode = "k" }),
 	PanelLayers = setmetatable({}, { __mode = "k" }),
+	OpacityBindings = setmetatable({}, { __mode = "k" }),
 }
 
 local Signal
@@ -8210,6 +8211,7 @@ Library.Events = {
 	ActionAdded = Signal.new(),
 	Unloading = Signal.new(),
 	IntroFinished = Signal.new(),
+	OpacityChanged = Signal.new(),
 }
 
 function Library:GetEvent(Name: string)
@@ -10508,7 +10510,7 @@ local function ApplyDepth(Entry)
 	end
 end
 
-local function Shadow(Parent, Strength, Radius)
+local function Shadow(Parent, Strength, Radius, Limit)
 	local Container = New("Frame", {
 		Name = "Shadow",
 		Size = UDim2.fromScale(1, 1),
@@ -10536,6 +10538,7 @@ local function Shadow(Parent, Strength, Radius)
 		Radius = Radius or 14,
 		Strength = Strength or 1,
 		Empty = false,
+		VerticalLimit = Limit,
 	}
 	Library.Shadows[Container] = Entry
 	ApplyDepth(Entry)
@@ -19137,7 +19140,7 @@ Components.Window = (function()
 		function Window:ApplyPaint()
 			local Paint = Window.Paint
 			local Active = Library.UseAcrylic and Library.Acrylic and true or false
-			local Visibility = Window.Opacity * (if Library.Transparency then 0.92 else 1)
+			local Visibility = Library:GetVisibility()
 
 			local function Scale(Transparency: number): number
 				return 1 - (1 - Transparency) * Visibility
@@ -19198,6 +19201,7 @@ Components.Window = (function()
 			if Library.Background and Library.Background.Layer then
 				Library.Background:Refresh()
 			end
+			Library:RefreshOpacity()
 		end
 
 		function Window:SetPanelDepth(Value)
@@ -29229,6 +29233,7 @@ Library.Internals = {
 	Place = Place,
 	Resolve = Resolve,
 	Signal = Signal,
+	Shadow = Shadow,
 	Flipper = Flipper,
 	Themes = Themes,
 	Fonts = Fonts,
@@ -30788,11 +30793,57 @@ function Library:GetThemesWithBackground()
 	return List
 end
 
+function Library:GetVisibility(): number
+	local Window = Library.Window
+	local Opacity = if Window and type(Window.Opacity) == "number" then Window.Opacity else 1
+	return Opacity * (if Library.Transparency then 0.92 else 1)
+end
+
+function Library:RefreshOpacity()
+	local Visibility = Library:GetVisibility()
+	for Object, Bindings in next, Library.OpacityBindings do
+		if Object.Parent then
+			for Property, Base in next, Bindings do
+				Object[Property] = 1 - (1 - Base) * Visibility
+			end
+		end
+	end
+	Library.Events.OpacityChanged:Fire(Visibility)
+end
+
+function Library:ScaleOpacity(Base: number): number
+	return 1 - (1 - Base) * Library:GetVisibility()
+end
+
+function Library:BindOpacity(Object: Instance, Property: string, Base: number, Silent: boolean?): () -> ()
+	local Bindings = Library.OpacityBindings[Object]
+	if not Bindings then
+		Bindings = {}
+		Library.OpacityBindings[Object] = Bindings
+	end
+
+	Bindings[Property] = Base
+	if not Silent then
+		(Object :: any)[Property] = Library:ScaleOpacity(Base)
+	end
+
+	return function()
+		local Current = Library.OpacityBindings[Object]
+		if Current then
+			Current[Property] = nil
+			if next(Current) == nil then
+				Library.OpacityBindings[Object] = nil
+			end
+		end
+	end
+end
+
 function Library:ToggleTransparency(Value)
 	Library.Transparency = Value and true or false
 	if Library.Window then
 		Library.Window:ApplyPaint()
 	end
+	Library:RefreshOpacity()
 end
 
 Library.InternalMuted = false
@@ -35713,6 +35764,26 @@ do
 
 	function Api:Icon(Image: ImageLabel | ImageButton, Name: (string | number)?, Variant: string?, Size: number?): boolean
 		return ApplyIcon(Image, Name, Variant, Size)
+	end
+
+	function Api:OnIntroFinished(Callback: () -> ()): any
+		if not Library.IntroActive then
+			self:Guard(Callback)
+			return nil
+		end
+
+		local Connection
+		Connection = self:Connect(Library.Events.IntroFinished, function()
+			Connection:Disconnect()
+			Callback()
+		end)
+		return Connection
+	end
+
+	function Api:Shadow(Parent: GuiObject, Strength: number?, Radius: number?, Limit: number?): any
+		local Entry = self.Internals.Shadow(Parent, Strength, Radius, Limit)
+		self:Track(Entry.Image, "shadow")
+		return Entry
 	end
 
 	function Api:Layer(Name: string, Order: number?): ScreenGui

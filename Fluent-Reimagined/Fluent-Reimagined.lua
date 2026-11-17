@@ -525,90 +525,90 @@ PanelDepth=1,HoverStyle='Full',Layout='Fluent',NavPosition='Top',NavLabelMode='H
 MinimizeKeybind=nil,MinimizeKey=Enum.KeyCode.LeftControl,UnloadCallbacks={},IconDefaults={},IconPalette={Color3.fromRGB(
 10,132,255),Color3.fromRGB(191,90,242),Color3.fromRGB(255,159,10),Color3.fromRGB(48,209,88),Color3.fromRGB(255,69,58),
 Color3.fromRGB(100,210,255),Color3.fromRGB(255,55,95),Color3.fromRGB(255,214,10),Color3.fromRGB(94,92,230)},
-PanelBackings=setmetatable({},{__mode='k'}),PanelLayers=setmetatable({},{__mode='k'})}local z do local A={}A.__index=A
-function A.new(B,C)return setmetatable({Signal=B,Connected=true,Handler=C,Next=nil},A)end function A:Disconnect()if not
-self.Connected then return end self.Connected=false local B=self.Signal local C local D=B.Head while D do if D==self
-then if C then C.Next=D.Next else B.Head=D.Next end if B.Tail==D then B.Tail=C end break end C=D D=D.Next end end z={}z.
-__index=z function z.new()return setmetatable({Head=nil,Tail=nil,Threads={}},z)end function z:Fire(...)local B=self.Tail
-local C=self.Head while C do local D=C.Next if C.Connected then C.Handler(...)end if C==B then break end C=D end local D
-=self.Threads if#D>0 then self.Threads={}for E,F in D do task.spawn(F,...)end end end function z:Connect(B)local C=A.
-new(self,B)if self.Tail then self.Tail.Next=C else self.Head=C end self.Tail=C return C end function z:Wait()table.
-insert(self.Threads,coroutine.running())return coroutine.yield()end function z:DisconnectAll()local B=self.Head while B
-do B.Connected=false B=B.Next end self.Head=nil self.Tail=nil end end export type MotorState={Complete:boolean,Value:
-number,Velocity:number?}export type MotorGoal={TargetValue:number,Step:(self:MotorGoal,State:MotorState,DeltaTime:number
-)->MotorState}export type SpringOptions={Frequency:number?,DampingRatio:number?}export type TweenOptions={Duration:
-number?,EasingStyle:Enum.EasingStyle?,EasingDirection:Enum.EasingDirection?}export type OscillateOptions={Amplitude:
-number?,Frequency:number?,Duration:number?}local A do local B=1/12 local C=0.001 local D=0.001 local E=0.0001 local F=
-math.pi*2 local G={}G.__index=G function G.new(H:number,I:{Velocity:number?}?):MotorGoal assert(H,
-'Missing argument #1: TargetValue')return setmetatable({TargetValue=H,Velocity=I and I.Velocity or 1},G)::any end
-function G:Step(H:MotorState,I:number):MotorState local J=H.Value local K=self.TargetValue local L=I*self.Velocity local
-M=math.abs(K-J)if L>=M then H.Value=K H.Velocity=0 H.Complete=true else H.Value=J+L*(K>J and 1 or-1)H.Velocity=self.
-Velocity H.Complete=false end return H end local H={}H.__index=H function H.new(I:number):MotorGoal return setmetatable(
-{TargetValue=I},H)::any end function H:Retarget(I:number)self.TargetValue=I end function H:Step(I:MotorState):MotorState
-I.Value=self.TargetValue I.Velocity=0 I.Complete=true return I end local I={}I.__index=I function I.new(J:number,K:
-SpringOptions?):MotorGoal assert(J,'Missing argument #1: TargetValue')return setmetatable({TargetValue=J,Frequency=K and
-K.Frequency or 4,DampingRatio=K and K.DampingRatio or 1},I)::any end function I:Retarget(J:number,K:SpringOptions?)self.
-TargetValue=J self.Frequency=K and K.Frequency or 4 self.DampingRatio=K and K.DampingRatio or 1 end function I:Step(J:
-MotorState,K:number):MotorState local L:number=self.DampingRatio local M:number=self.Frequency*F local N:number=self.
-TargetValue local O:number=J.Value local P:number=J.Velocity or 0 local Q=O-N local R=math.exp(-L*M*K)local S:number,T:
-number if L==1 then local U=M*K S=(Q*(1+U)+P*K)*R+N T=(P*(1-U)-Q*(M*U))*R elseif L<1 then local U=math.sqrt(1-L*L)local
-V=M*U*K local W=math.cos(V)local X=math.sin(V)local Y if U>E then Y=X/U else local Z=K*M local _=U*U Y=Z+((Z*Z)*_*_/20-_
-)*(Z*Z*Z)/6 end local Z if M*U>E then Z=X/(M*U)else local _=M*U local aa=_*_ Z=K+((K*K)*aa*aa/20-aa)*(K*K*K)/6 end S=(Q*
-(W+L*Y)+P*Z)*R+N T=(P*(W-Y*L)-Q*(Y*M))*R else local aa=math.sqrt(L*L-1)local U=-M*(L-aa)local V=-M*(L+aa)local W=(P-Q*U)
-/(2*M*aa)local X=Q-W local Y=X*math.exp(U*K)local Z=W*math.exp(V*K)S=Y+Z+N T=Y*U+Z*V end local aa=math.abs(T)<C and math
-.abs(S-N)<D J.Complete=aa J.Value=aa and N or S J.Velocity=aa and 0 or T return J end local aa={}aa.__index=aa function
-aa.new(J:number,K:TweenOptions?):MotorGoal assert(J,'Missing argument #1: TargetValue')return setmetatable({TargetValue=
-J,Duration=math.max(if K and K.Duration then K.Duration else 0.25,E),EasingStyle=if K and K.EasingStyle then K.
-EasingStyle else Enum.EasingStyle.Quad,EasingDirection=if K and K.EasingDirection then K.EasingDirection else Enum.
-EasingDirection.Out,Elapsed=0,Origin=nil},aa)::any end function aa:Step(J:MotorState,K:number):MotorState local L:number
-?=self.Origin if L==nil then L=J.Value self.Origin=L end self.Elapsed+=K local M=math.min(self.Elapsed/self.Duration,1)
-local N=m:GetValue(M,self.EasingStyle,self.EasingDirection)local O=(L::number)+(self.TargetValue-(L::number))*N if M>=1
-then J.Value=self.TargetValue J.Velocity=0 J.Complete=true else J.Velocity=(O-J.Value)/math.max(K,E)J.Value=O J.Complete
-=false end return J end local J={}J.__index=J function J.new(K:number,L:MotorGoal):MotorGoal assert(L,
-'Missing argument #2: Goal')return setmetatable({TargetValue=L.TargetValue,Seconds=math.max(K,0),Goal=L,Elapsed=0},J)::
-any end function J:Step(K:MotorState,L:number):MotorState if self.Elapsed<self.Seconds then self.Elapsed+=L K.Complete=
-false return K end return self.Goal:Step(K,L)end local K={}K.__index=K function K.new(L:{MotorGoal}):MotorGoal assert(
-type(L)=='table'and#L>0,'Missing argument #1: Goals')return setmetatable({TargetValue=L[#L].TargetValue,Goals=L,Index=1}
-,K)::any end function K:Step(L:MotorState,M:number):MotorState self.Goals[self.Index]:Step(L,M)if L.Complete and self.
-Index<#self.Goals then self.Index+=1 L.Complete=false end return L end local L={}L.__index=L function L.new(M:number,N:
-OscillateOptions?):MotorGoal assert(M,'Missing argument #1: Center')return setmetatable({TargetValue=M,Amplitude=if N
-and N.Amplitude then N.Amplitude else 1,Frequency=if N and N.Frequency then N.Frequency else 1,Duration=if N then N.
-Duration else nil,Elapsed=0},L)::any end function L:Step(M:MotorState,N:number):MotorState self.Elapsed+=N if self.
-Duration and self.Elapsed>=self.Duration then M.Value=self.TargetValue M.Velocity=0 M.Complete=true return M end local O
-=self.Elapsed*self.Frequency*F M.Value=self.TargetValue+math.sin(O)*self.Amplitude M.Velocity=math.cos(O)*self.Amplitude
-*self.Frequency*F M.Complete=false return M end local M:{any}={}local N:RBXScriptConnection?local function O(P:number)P=
-math.min(P,B)local Q=#M local R=0 for S=1,Q do local T=M[S]if T.Running then local U,V=pcall(T.Step,T,P)if not U then T.
-Running=false y:Alert('Motor step failed: '..tostring(V),'Error')end end if T.Running then R+=1 M[R]=T else T.Queued=
-false end end local S=#M for T=Q+1,S do local U=M[T]if U.Running then R+=1 M[R]=U else U.Queued=false end end for T=S,R+
-1,-1 do M[T]=nil end if R==0 and N then N:Disconnect()N=nil end end local P={}P.__index=P P.MotorType='Base'function P.
-new()return setmetatable({StepSignal=z.new(),StartSignal=z.new(),CompleteSignal=z.new(),Running=false,Queued=false},P)
-end function P:OnStep(Q:(Value:any)->())return self.StepSignal:Connect(Q)end function P:OnStart(Q:()->())return self.
-StartSignal:Connect(Q)end function P:OnComplete(Q:()->())return self.CompleteSignal:Connect(Q)end function P:Start()if
-self.Running then return end self.Running=true if not self.Queued then self.Queued=true table.insert(M,self)end if not N
-then N=s:Connect(O)end end function P:Stop()self.Running=false end function P:IsRunning():boolean return self.Running
-end function P:Destroy()self.Running=false self.StepSignal:DisconnectAll()self.StartSignal:DisconnectAll()self.
-CompleteSignal:DisconnectAll()end function P.Step()end function P.GetValue()end function P.SetGoal()end function P:
-__tostring()return'Motor'end local function Q(R:any):(boolean,string?)if type(R)~='table'then return false end local S=
-getmetatable(R)if type(S)=='table'and rawget(S,'MotorType')and S.MotorType~='Base'then return true,S.MotorType end
-return false end local R=setmetatable({},P)R.__index=R R.MotorType='Single'function R.new(S:number,T:boolean?)assert(S,
-'Missing argument #1: InitialValue')assert(typeof(S)=='number','InitialValue must be a number!')local U=setmetatable(P.
-new(),R)U.UseImplicitConnections=T~=false U.Goal=nil U.State={Complete=true,Value=S,Velocity=0}return U end function R:
-Step(S:number):boolean local T=self.State if T.Complete then return true end self.Goal:Step(T,S)if self.StepSignal.Head
-then self.StepSignal:Fire(T.Value)end if T.Complete then if self.UseImplicitConnections then self:Stop()end self.
-CompleteSignal:Fire()end return T.Complete end function R:GetValue():number return self.State.Value end function R:
-SetGoal(S:MotorGoal)self.State.Complete=false self.Goal=S if self.StartSignal.Head then self.StartSignal:Fire()end if
-self.UseImplicitConnections then self:Start()end end function R:__tostring()return'Motor(Single)'end function P:Wait()if
-self.Running then self.CompleteSignal:Wait()end end function R:Tween(S:number,T:TweenOptions?)self:SetGoal(aa.new(S,T))
-return self end local function S(T)T.State.Complete=false if T.StartSignal.Head then T.StartSignal:Fire()end if T.
-UseImplicitConnections then T:Start()end end function R:Spring(T:number,U:SpringOptions?)local V=self.Goal if V and V.
-Owner==self and getmetatable(V)==I then V:Retarget(T,U)S(self)return self end local W=I.new(T,U)W.Owner=self self:
-SetGoal(W)return self end function R:Snap(T:number)local U=self.Goal if U and U.Owner==self and getmetatable(U)==H then
-U:Retarget(T)S(self)return self end local V=H.new(T)V.Owner=self self:SetGoal(V)return self end function R:Bind(T:
-Instance,U:string)return self:OnStep(function(V:number)(T::any)[U]=V end)end local T=setmetatable({},P)T.__index=T T.
-MotorType='Group'local function U(V:any)if Q(V)then return V end local W=typeof(V)if W=='number'then return R.new(V,
-false)elseif W=='table'then return T.new(V,false)end y:Alert(string.format(
-'Unable to convert %q to motor; type %s is unsupported',tostring(V),W),'Error')return R.new(0,false)end function T.new(V
-:{[any]:any},W:boolean?)assert(V,'Missing argument #1: InitialValues')assert(typeof(V)=='table',
+PanelBackings=setmetatable({},{__mode='k'}),PanelLayers=setmetatable({},{__mode='k'}),OpacityBindings=setmetatable({},{
+__mode='k'})}local z do local A={}A.__index=A function A.new(B,C)return setmetatable({Signal=B,Connected=true,Handler=C,
+Next=nil},A)end function A:Disconnect()if not self.Connected then return end self.Connected=false local B=self.Signal
+local C local D=B.Head while D do if D==self then if C then C.Next=D.Next else B.Head=D.Next end if B.Tail==D then B.
+Tail=C end break end C=D D=D.Next end end z={}z.__index=z function z.new()return setmetatable({Head=nil,Tail=nil,Threads
+={}},z)end function z:Fire(...)local B=self.Tail local C=self.Head while C do local D=C.Next if C.Connected then C.
+Handler(...)end if C==B then break end C=D end local D=self.Threads if#D>0 then self.Threads={}for E,F in D do task.
+spawn(F,...)end end end function z:Connect(B)local C=A.new(self,B)if self.Tail then self.Tail.Next=C else self.Head=C
+end self.Tail=C return C end function z:Wait()table.insert(self.Threads,coroutine.running())return coroutine.yield()end
+function z:DisconnectAll()local B=self.Head while B do B.Connected=false B=B.Next end self.Head=nil self.Tail=nil end
+end export type MotorState={Complete:boolean,Value:number,Velocity:number?}export type MotorGoal={TargetValue:number,
+Step:(self:MotorGoal,State:MotorState,DeltaTime:number)->MotorState}export type SpringOptions={Frequency:number?,
+DampingRatio:number?}export type TweenOptions={Duration:number?,EasingStyle:Enum.EasingStyle?,EasingDirection:Enum.
+EasingDirection?}export type OscillateOptions={Amplitude:number?,Frequency:number?,Duration:number?}local A do local B=1
+/12 local C=0.001 local D=0.001 local E=0.0001 local F=math.pi*2 local G={}G.__index=G function G.new(H:number,I:{
+Velocity:number?}?):MotorGoal assert(H,'Missing argument #1: TargetValue')return setmetatable({TargetValue=H,Velocity=I
+and I.Velocity or 1},G)::any end function G:Step(H:MotorState,I:number):MotorState local J=H.Value local K=self.
+TargetValue local L=I*self.Velocity local M=math.abs(K-J)if L>=M then H.Value=K H.Velocity=0 H.Complete=true else H.
+Value=J+L*(K>J and 1 or-1)H.Velocity=self.Velocity H.Complete=false end return H end local H={}H.__index=H function H.
+new(I:number):MotorGoal return setmetatable({TargetValue=I},H)::any end function H:Retarget(I:number)self.TargetValue=I
+end function H:Step(I:MotorState):MotorState I.Value=self.TargetValue I.Velocity=0 I.Complete=true return I end local I=
+{}I.__index=I function I.new(J:number,K:SpringOptions?):MotorGoal assert(J,'Missing argument #1: TargetValue')return
+setmetatable({TargetValue=J,Frequency=K and K.Frequency or 4,DampingRatio=K and K.DampingRatio or 1},I)::any end
+function I:Retarget(J:number,K:SpringOptions?)self.TargetValue=J self.Frequency=K and K.Frequency or 4 self.DampingRatio
+=K and K.DampingRatio or 1 end function I:Step(J:MotorState,K:number):MotorState local L:number=self.DampingRatio local
+M:number=self.Frequency*F local N:number=self.TargetValue local O:number=J.Value local P:number=J.Velocity or 0 local Q=
+O-N local R=math.exp(-L*M*K)local S:number,T:number if L==1 then local U=M*K S=(Q*(1+U)+P*K)*R+N T=(P*(1-U)-Q*(M*U))*R
+elseif L<1 then local U=math.sqrt(1-L*L)local V=M*U*K local W=math.cos(V)local X=math.sin(V)local Y if U>E then Y=X/U
+else local Z=K*M local _=U*U Y=Z+((Z*Z)*_*_/20-_)*(Z*Z*Z)/6 end local Z if M*U>E then Z=X/(M*U)else local _=M*U local aa
+=_*_ Z=K+((K*K)*aa*aa/20-aa)*(K*K*K)/6 end S=(Q*(W+L*Y)+P*Z)*R+N T=(P*(W-Y*L)-Q*(Y*M))*R else local aa=math.sqrt(L*L-1)
+local U=-M*(L-aa)local V=-M*(L+aa)local W=(P-Q*U)/(2*M*aa)local X=Q-W local Y=X*math.exp(U*K)local Z=W*math.exp(V*K)S=Y+
+Z+N T=Y*U+Z*V end local aa=math.abs(T)<C and math.abs(S-N)<D J.Complete=aa J.Value=aa and N or S J.Velocity=aa and 0 or
+T return J end local aa={}aa.__index=aa function aa.new(J:number,K:TweenOptions?):MotorGoal assert(J,
+'Missing argument #1: TargetValue')return setmetatable({TargetValue=J,Duration=math.max(if K and K.Duration then K.
+Duration else 0.25,E),EasingStyle=if K and K.EasingStyle then K.EasingStyle else Enum.EasingStyle.Quad,EasingDirection=
+if K and K.EasingDirection then K.EasingDirection else Enum.EasingDirection.Out,Elapsed=0,Origin=nil},aa)::any end
+function aa:Step(J:MotorState,K:number):MotorState local L:number?=self.Origin if L==nil then L=J.Value self.Origin=L
+end self.Elapsed+=K local M=math.min(self.Elapsed/self.Duration,1)local N=m:GetValue(M,self.EasingStyle,self.
+EasingDirection)local O=(L::number)+(self.TargetValue-(L::number))*N if M>=1 then J.Value=self.TargetValue J.Velocity=0
+J.Complete=true else J.Velocity=(O-J.Value)/math.max(K,E)J.Value=O J.Complete=false end return J end local J={}J.__index
+=J function J.new(K:number,L:MotorGoal):MotorGoal assert(L,'Missing argument #2: Goal')return setmetatable({TargetValue=
+L.TargetValue,Seconds=math.max(K,0),Goal=L,Elapsed=0},J)::any end function J:Step(K:MotorState,L:number):MotorState if
+self.Elapsed<self.Seconds then self.Elapsed+=L K.Complete=false return K end return self.Goal:Step(K,L)end local K={}K.
+__index=K function K.new(L:{MotorGoal}):MotorGoal assert(type(L)=='table'and#L>0,'Missing argument #1: Goals')return
+setmetatable({TargetValue=L[#L].TargetValue,Goals=L,Index=1},K)::any end function K:Step(L:MotorState,M:number):
+MotorState self.Goals[self.Index]:Step(L,M)if L.Complete and self.Index<#self.Goals then self.Index+=1 L.Complete=false
+end return L end local L={}L.__index=L function L.new(M:number,N:OscillateOptions?):MotorGoal assert(M,
+'Missing argument #1: Center')return setmetatable({TargetValue=M,Amplitude=if N and N.Amplitude then N.Amplitude else 1,
+Frequency=if N and N.Frequency then N.Frequency else 1,Duration=if N then N.Duration else nil,Elapsed=0},L)::any end
+function L:Step(M:MotorState,N:number):MotorState self.Elapsed+=N if self.Duration and self.Elapsed>=self.Duration then
+M.Value=self.TargetValue M.Velocity=0 M.Complete=true return M end local O=self.Elapsed*self.Frequency*F M.Value=self.
+TargetValue+math.sin(O)*self.Amplitude M.Velocity=math.cos(O)*self.Amplitude*self.Frequency*F M.Complete=false return M
+end local M:{any}={}local N:RBXScriptConnection?local function O(P:number)P=math.min(P,B)local Q=#M local R=0 for S=1,Q
+do local T=M[S]if T.Running then local U,V=pcall(T.Step,T,P)if not U then T.Running=false y:Alert('Motor step failed: '
+..tostring(V),'Error')end end if T.Running then R+=1 M[R]=T else T.Queued=false end end local S=#M for T=Q+1,S do local
+U=M[T]if U.Running then R+=1 M[R]=U else U.Queued=false end end for T=S,R+1,-1 do M[T]=nil end if R==0 and N then N:
+Disconnect()N=nil end end local P={}P.__index=P P.MotorType='Base'function P.new()return setmetatable({StepSignal=z.new(
+),StartSignal=z.new(),CompleteSignal=z.new(),Running=false,Queued=false},P)end function P:OnStep(Q:(Value:any)->())
+return self.StepSignal:Connect(Q)end function P:OnStart(Q:()->())return self.StartSignal:Connect(Q)end function P:
+OnComplete(Q:()->())return self.CompleteSignal:Connect(Q)end function P:Start()if self.Running then return end self.
+Running=true if not self.Queued then self.Queued=true table.insert(M,self)end if not N then N=s:Connect(O)end end
+function P:Stop()self.Running=false end function P:IsRunning():boolean return self.Running end function P:Destroy()self.
+Running=false self.StepSignal:DisconnectAll()self.StartSignal:DisconnectAll()self.CompleteSignal:DisconnectAll()end
+function P.Step()end function P.GetValue()end function P.SetGoal()end function P:__tostring()return'Motor'end local 
+function Q(R:any):(boolean,string?)if type(R)~='table'then return false end local S=getmetatable(R)if type(S)=='table'
+and rawget(S,'MotorType')and S.MotorType~='Base'then return true,S.MotorType end return false end local R=setmetatable({
+},P)R.__index=R R.MotorType='Single'function R.new(S:number,T:boolean?)assert(S,'Missing argument #1: InitialValue')
+assert(typeof(S)=='number','InitialValue must be a number!')local U=setmetatable(P.new(),R)U.UseImplicitConnections=T~=
+false U.Goal=nil U.State={Complete=true,Value=S,Velocity=0}return U end function R:Step(S:number):boolean local T=self.
+State if T.Complete then return true end self.Goal:Step(T,S)if self.StepSignal.Head then self.StepSignal:Fire(T.Value)
+end if T.Complete then if self.UseImplicitConnections then self:Stop()end self.CompleteSignal:Fire()end return T.
+Complete end function R:GetValue():number return self.State.Value end function R:SetGoal(S:MotorGoal)self.State.Complete
+=false self.Goal=S if self.StartSignal.Head then self.StartSignal:Fire()end if self.UseImplicitConnections then self:
+Start()end end function R:__tostring()return'Motor(Single)'end function P:Wait()if self.Running then self.CompleteSignal
+:Wait()end end function R:Tween(S:number,T:TweenOptions?)self:SetGoal(aa.new(S,T))return self end local function S(T)T.
+State.Complete=false if T.StartSignal.Head then T.StartSignal:Fire()end if T.UseImplicitConnections then T:Start()end
+end function R:Spring(T:number,U:SpringOptions?)local V=self.Goal if V and V.Owner==self and getmetatable(V)==I then V:
+Retarget(T,U)S(self)return self end local W=I.new(T,U)W.Owner=self self:SetGoal(W)return self end function R:Snap(T:
+number)local U=self.Goal if U and U.Owner==self and getmetatable(U)==H then U:Retarget(T)S(self)return self end local V=
+H.new(T)V.Owner=self self:SetGoal(V)return self end function R:Bind(T:Instance,U:string)return self:OnStep(function(V:
+number)(T::any)[U]=V end)end local T=setmetatable({},P)T.__index=T T.MotorType='Group'local function U(V:any)if Q(V)then
+return V end local W=typeof(V)if W=='number'then return R.new(V,false)elseif W=='table'then return T.new(V,false)end y:
+Alert(string.format('Unable to convert %q to motor; type %s is unsupported',tostring(V),W),'Error')return R.new(0,false)
+end function T.new(V:{[any]:any},W:boolean?)assert(V,'Missing argument #1: InitialValues')assert(typeof(V)=='table',
 'InitialValues must be a table!')assert(not V.Step,
 [[InitialValues contains disallowed property "Step". Did you mean to put a table of values here?]])local X=setmetatable(
 P.new(),T)X.UseImplicitConnections=W~=false X.Complete=true X.Motors={}for Y,Z in V do X.Motors[Y]=U(Z)end return X end
@@ -1491,32 +1491,33 @@ GUI,Exclude={[D]=true,[y.BlurArea]=true},BaseColor=bt.BaseColor})end function F:
 Shown=false y:ReleaseBlur(E,F.Source,true)F.Source=nil task.delay(0.3,function()if not F.Shown then D.Visible=false end
 end)end function F:Destroy()F:Hide()task.delay(0.4,function()E:Destroy()D:Destroy()end)end return F end y.Events={
 WindowCreated=z.new(),TabAdded=z.new(),TabRemoved=z.new(),TabSelected=z.new(),SectionAdded=z.new(),ElementAdded=z.new(),
-ActionAdded=z.new(),Unloading=z.new(),IntroFinished=z.new()}function y:GetEvent(bs:string)assert(type(bs)=='string'and
-bs~='','GetEvent - Expected an event name')local bt=y.Events[bs]if not bt then bt=z.new()y.Events[bs]=bt end return bt
-end function y:On(bs:string,bt:(...any)->())assert(type(bt)=='function','On - Handler must be a function')return y:
-GetEvent(bs):Connect(function(...)local D,E=pcall(bt,...)if not D then y:Alert(`Event "{bs}" handler error: {tostring(E)
-}`,'Error')end end)end function y:Emit(bs:string,...:any)y:GetEvent(bs):Fire(...)end function y:CreateLayer(bs:string,bt
-:number?)assert(type(bs)=='string'and bs~='','CreateLayer - Expected a layer name')local D=y.Layers[bs]if D and D.Parent
-then return D end local E=ac.New('ScreenGui',{Name=`FluentLayer_{bs}`,DisplayOrder=bt or 1001,IgnoreGuiInset=true,
-ResetOnSpawn=false,Parent=bo.Parent})v(E)y.Layers[bs]=E return E end function y:RemoveLayer(bs:string):boolean local bt=
-y.Layers[bs]if not bt then return false end y.Layers[bs]=nil bt:Destroy()return true end local bs local bt=0 function y:
-SafeCallback(D,...)if not D then return end local E,F=pcall(D,...)if E then return end local I=tostring(F)local J=os.
-clock()if I==bs and J-bt<1 then return end bs=I bt=J if not y.Config.CallbackErrors then return end local K,L=I:find
-':%d+: 'return y:InternalNotify{Title='Interface',Content='Callback error',SubContent=L and I:sub(L+1)or I,Duration=5,
-Type='Error'}end function y:Round(D,E)if not E or E<=0 then return math.floor(D)end local F=10^E local I=D*F local J=I>=
-0 and math.floor(I+1e-7)or math.ceil(I-1e-7)return J/F end local function D(E,F,I)if E==nil or E==''then return nil end
-if type(E)=='string'then local J=I and I.IconPack if type(J)=='string'then J={Pack=J,Variant=I.IconVariant,Size=I.
-IconSize}end local K=y:GetIconData(E,nil,nil,F,J)if K then if K.ImageRectSize==Vector2.zero then return K.Image end
-return K end end if type(E)=='number'then return'rbxassetid://'..E end if type(E)=='string'and(E:find'rbxassetid'or E:
-find'rbxasset'or E:find'http')then return E end return nil end local E={['lucide-accessibility']=
-'rbxassetid://10709751939',['lucide-activity']='rbxassetid://10709752035',['lucide-air-vent']='rbxassetid://10709752131'
-,['lucide-airplay']='rbxassetid://10709752254',['lucide-alarm-check']='rbxassetid://10709752405',['lucide-alarm-clock']=
-'rbxassetid://10709752630',['lucide-alarm-clock-off']='rbxassetid://10709752508',['lucide-alarm-minus']=
-'rbxassetid://10709752732',['lucide-alarm-plus']='rbxassetid://10709752825',['lucide-album']='rbxassetid://10709752906',
-['lucide-alert-circle']='rbxassetid://10709752996',['lucide-alert-octagon']='rbxassetid://10709753064',[
-'lucide-alert-triangle']='rbxassetid://10709753149',['lucide-align-center']='rbxassetid://10709753570',[
-'lucide-align-center-horizontal']='rbxassetid://10709753272',['lucide-align-center-vertical']='rbxassetid://10709753421'
-,['lucide-align-end-horizontal']='rbxassetid://10709753692',['lucide-align-end-vertical']='rbxassetid://10709753808',[
+ActionAdded=z.new(),Unloading=z.new(),IntroFinished=z.new(),OpacityChanged=z.new()}function y:GetEvent(bs:string)assert(
+type(bs)=='string'and bs~='','GetEvent - Expected an event name')local bt=y.Events[bs]if not bt then bt=z.new()y.Events[
+bs]=bt end return bt end function y:On(bs:string,bt:(...any)->())assert(type(bt)=='function',
+'On - Handler must be a function')return y:GetEvent(bs):Connect(function(...)local D,E=pcall(bt,...)if not D then y:
+Alert(`Event "{bs}" handler error: {tostring(E)}`,'Error')end end)end function y:Emit(bs:string,...:any)y:GetEvent(bs):
+Fire(...)end function y:CreateLayer(bs:string,bt:number?)assert(type(bs)=='string'and bs~='',
+'CreateLayer - Expected a layer name')local D=y.Layers[bs]if D and D.Parent then return D end local E=ac.New('ScreenGui'
+,{Name=`FluentLayer_{bs}`,DisplayOrder=bt or 1001,IgnoreGuiInset=true,ResetOnSpawn=false,Parent=bo.Parent})v(E)y.Layers[
+bs]=E return E end function y:RemoveLayer(bs:string):boolean local bt=y.Layers[bs]if not bt then return false end y.
+Layers[bs]=nil bt:Destroy()return true end local bs local bt=0 function y:SafeCallback(D,...)if not D then return end
+local E,F=pcall(D,...)if E then return end local I=tostring(F)local J=os.clock()if I==bs and J-bt<1 then return end bs=I
+bt=J if not y.Config.CallbackErrors then return end local K,L=I:find':%d+: 'return y:InternalNotify{Title='Interface',
+Content='Callback error',SubContent=L and I:sub(L+1)or I,Duration=5,Type='Error'}end function y:Round(D,E)if not E or E
+<=0 then return math.floor(D)end local F=10^E local I=D*F local J=I>=0 and math.floor(I+1e-7)or math.ceil(I-1e-7)return
+J/F end local function D(E,F,I)if E==nil or E==''then return nil end if type(E)=='string'then local J=I and I.IconPack
+if type(J)=='string'then J={Pack=J,Variant=I.IconVariant,Size=I.IconSize}end local K=y:GetIconData(E,nil,nil,F,J)if K
+then if K.ImageRectSize==Vector2.zero then return K.Image end return K end end if type(E)=='number'then return
+'rbxassetid://'..E end if type(E)=='string'and(E:find'rbxassetid'or E:find'rbxasset'or E:find'http')then return E end
+return nil end local E={['lucide-accessibility']='rbxassetid://10709751939',['lucide-activity']=
+'rbxassetid://10709752035',['lucide-air-vent']='rbxassetid://10709752131',['lucide-airplay']='rbxassetid://10709752254',
+['lucide-alarm-check']='rbxassetid://10709752405',['lucide-alarm-clock']='rbxassetid://10709752630',[
+'lucide-alarm-clock-off']='rbxassetid://10709752508',['lucide-alarm-minus']='rbxassetid://10709752732',[
+'lucide-alarm-plus']='rbxassetid://10709752825',['lucide-album']='rbxassetid://10709752906',['lucide-alert-circle']=
+'rbxassetid://10709752996',['lucide-alert-octagon']='rbxassetid://10709753064',['lucide-alert-triangle']=
+'rbxassetid://10709753149',['lucide-align-center']='rbxassetid://10709753570',['lucide-align-center-horizontal']=
+'rbxassetid://10709753272',['lucide-align-center-vertical']='rbxassetid://10709753421',['lucide-align-end-horizontal']=
+'rbxassetid://10709753692',['lucide-align-end-vertical']='rbxassetid://10709753808',[
 'lucide-align-horizontal-distribute-center']='rbxassetid://10747779791',['lucide-align-horizontal-distribute-end']=
 'rbxassetid://10747784534',['lucide-align-horizontal-distribute-start']='rbxassetid://10709754118',[
 'lucide-align-horizontal-justify-center']='rbxassetid://10709754204',['lucide-align-horizontal-justify-end']=
@@ -2062,49 +2063,49 @@ AppliedDepth=bH bG.AppliedVisible=bJ bG.AppliedAlpha=bI bG.AppliedLimit=bK bG.Im
 local bL=math.round(6+8*bH)local bM=if bK then math.min(bL,bK)else bL local bN=if bK then 0 else math.round(2*bH)local
 bO=math.clamp(0.03*bH,0.015,0.06)*bI for bP,bQ in bG.Layers do local bR=(bP/bD)^bE local bS=math.round(bL*bR)local bT=
 math.round(bM*bR)bQ.Frame.Position=UDim2.fromOffset(-bS,bN-bT)bQ.Frame.Size=UDim2.new(1,bS*2,1,bT*2)bQ.Frame.
-BackgroundTransparency=1-bO bQ.Corner.CornerRadius=UDim.new(0,bG.Radius+bT)end end local function bG(bH,bI,bJ)local bK=
-bl('Frame',{Name='Shadow',Size=UDim2.fromScale(1,1),BackgroundTransparency=1,ZIndex=0,Parent=bH})local bL={}for bM=bD,1,
--1 do local bN=bl('UICorner',{})local bO=bl('Frame',{Name='Layer'..bM,BackgroundColor3=Color3.new(0,0,0),BorderSizePixel
-=0,Active=false,Parent=bK},{bN})bL[bM]={Frame=bO,Corner=bN}end local bM={Image=bK,Layers=bL,Radius=bJ or 14,Strength=bI
-or 1,Empty=false}y.Shadows[bK]=bM bF(bM)return bM end local function bH(bI,bJ)ac.OnHoverEnter(bI,function(...)if not y.
-InputLocked then bJ.Enter(...)end end)ac.OnHoverLeave(bI,bJ.Leave)ac.AddGuarded(bI,'MouseButton1Down',function(...)if
-not ac.AcceptsInput(bI)then return end if not y.InputLocked then bJ.Down(...)end end)ac.AddGuarded(bI,'MouseButton1Up',
-bJ.Up)end local bI={Initialized=false,Enabled=false,Models={}}do local bJ=6 local bK:Folder?local bL:DepthOfFieldEffect?
-local bM={}local function bN():Camera?return o.CurrentCamera end local function bO():Folder?local bP=bN()if not bP then
-return nil end if not bK or not bK.Parent then bK=Instance.new'Folder'bK.Name='FluentAcrylic'end if bK.Parent~=bP then
-bK.Parent=bP end return bK end local function bP(bQ:Vector2,bR:number):Vector3 local bS=bN()::Camera local bT=bS:
-ScreenPointToRay(bQ.X,bQ.Y)local bU=math.max(bT.Direction:Dot(bS.CFrame.LookVector),0.0001)return bT.Origin+bT.Direction
-*(bR/bU)end local function bQ():Part return bl('Part',{Name='Body',Color=Color3.new(0,0,0),Material=Enum.Material.Glass,
-Size=Vector3.new(1,1,0),Anchored=true,CanCollide=false,CanQuery=false,CanTouch=false,Locked=true,CastShadow=false,
-Transparency=0.98},{bl('SpecialMesh',{MeshType=Enum.MeshType.Brick,Offset=Vector3.new(0,0,-0.000001)})})end local 
-function bR(bS:number):number return 1-(bS-0.5)/bJ end function bI.Init()if bI.Initialized then return end bI.
-Initialized=true bL=Instance.new'DepthOfFieldEffect'bL.Name='FluentAcrylicBlur'bL.FarIntensity=0 bL.InFocusRadius=0.1 bL
-.NearIntensity=1 local function bS(bT:Instance)if bT:IsA'DepthOfFieldEffect'and bT~=bL then bM[bT]=bT.Enabled end end
-for bT,bU in i:GetChildren()do bS(bU)end local bT=bN()if bT then for bU,bV in bT:GetChildren()do bS(bV)end end end
-function bI.Enable()if not bI.Initialized then bI.Init()end bI.Enabled=true for bS in bM do if bS.Parent then bS.Enabled
-=false end end(bL::DepthOfFieldEffect).Parent=i end function bI.Disable()if not bI.Initialized then return end bI.
-Enabled=false for bS,bT in bM do if bS.Parent then bS.Enabled=bT end end(bL::DepthOfFieldEffect).Parent=nil end function
-bI.Destroy()bI.Disable()for bS in bI.Models do pcall(function()bS:Destroy()end)end table.clear(bI.Models)if bL then bL:
-Destroy()bL=nil end if bK then bK:Destroy()bK=nil end table.clear(bM)bI.Initialized=false end function bI.Blur(bS:number
-?)local bT={Radius=13,Visible=true}local bU={}local bV=bS or 0.001 local bW,bX=Vector2.zero,Vector2.zero local bY=bQ()bY
-.Parent=bO()bI.Models[bY]=true local bZ=bY:FindFirstChildOfClass'SpecialMesh'::SpecialMesh local b_,b0={},{}for b1=1,bJ*
-2 do b_[b1]=bQ()b0[b1]=b_[b1]:FindFirstChildOfClass'SpecialMesh'::SpecialMesh b_[b1].Parent=bY end table.insert(bU,bY:
-GetPropertyChangedSignal'Transparency':Connect(function()for b1,b2 in b_ do b2.Transparency=bY.Transparency end end))
-local b1=table.create(bJ*2+1)local b2=table.create(bJ*2+1)b1[1]=bY for b3=1,bJ*2 do b1[b3+1]=b_[b3]end local b3:number?
-local b4:number?local b5:number?local function b6(b7:number?,b8:number):boolean return b7~=nil and math.abs(b7-b8)<=math
-.abs(b7)*0.000001 end local function b7():Vector2 if typeof(y.AcrylicOffset)=='Vector2'then return y.AcrylicOffset end
-return Vector2.zero end local function b8()local b9=bN()if not b9 or not bY.Parent then return end if bY.Parent~=bO()
-then bY.Parent=bO()end if bX.X<1 or bX.Y<1 or not bT.Visible or not y.Acrylic then return end local ca=b7()local cb=bP(
-bW+ca,bV)local cc=bP(bW+Vector2.new(bX.X,0)+ca,bV)local I=bP(bW+bX+ca,bV)local J=(cc-cb).Magnitude local K=(cc-I).
-Magnitude local L=CFrame.fromMatrix((cb+I)/2,b9.CFrame.XVector,b9.CFrame.YVector,b9.CFrame.ZVector)local M=math.min(bT.
-Radius*(J/math.max(bX.X,1)),J/2,K/2)local N=M/bJ local O=not(b6(b3,J)and b6(b4,K)and b6(b5,M))if O then b3,b4,b5=J,K,M
-bZ.Scale=Vector3.new(J,math.max(K-M*2,0),0)end b2[1]=L for P=1,bJ do local Q=K/2-(P-0.5)*N b2[P+1]=L*CFrame.new(0,Q,0)b2
-[bJ+P+1]=L*CFrame.new(0,-Q,0)if O then local R=M-math.sqrt(math.max(M*M-(M*bR(P))^2,0))local S=Vector3.new(math.max(J-R*
-2,0),N,0)b0[P].Scale=S b0[bJ+P].Scale=S end end local P=pcall(o.BulkMoveTo,o,b1,b2,Enum.BulkMoveMode.FireCFrameChanged)
-if not P then for Q,R in b1 do R.CFrame=b2[Q]end end end local b9=false local function ca()if b9 then return end b9=true
-task.defer(function()b9=false b8()end)end local cb=bN()if cb then table.insert(bU,cb:GetPropertyChangedSignal'CFrame':
-Connect(ca))table.insert(bU,cb:GetPropertyChangedSignal'ViewportSize':Connect(ca))table.insert(bU,cb:
-GetPropertyChangedSignal'FieldOfView':Connect(ca))end bT.Frame=bl('Frame',{Name='AcrylicBlurAnchor',
+BackgroundTransparency=1-bO bQ.Corner.CornerRadius=UDim.new(0,bG.Radius+bT)end end local function bG(bH,bI,bJ,bK)local
+bL=bl('Frame',{Name='Shadow',Size=UDim2.fromScale(1,1),BackgroundTransparency=1,ZIndex=0,Parent=bH})local bM={}for bN=bD
+,1,-1 do local bO=bl('UICorner',{})local bP=bl('Frame',{Name='Layer'..bN,BackgroundColor3=Color3.new(0,0,0),
+BorderSizePixel=0,Active=false,Parent=bL},{bO})bM[bN]={Frame=bP,Corner=bO}end local bN={Image=bL,Layers=bM,Radius=bJ or
+14,Strength=bI or 1,Empty=false,VerticalLimit=bK}y.Shadows[bL]=bN bF(bN)return bN end local function bH(bI,bJ)ac.
+OnHoverEnter(bI,function(...)if not y.InputLocked then bJ.Enter(...)end end)ac.OnHoverLeave(bI,bJ.Leave)ac.AddGuarded(bI
+,'MouseButton1Down',function(...)if not ac.AcceptsInput(bI)then return end if not y.InputLocked then bJ.Down(...)end end
+)ac.AddGuarded(bI,'MouseButton1Up',bJ.Up)end local bI={Initialized=false,Enabled=false,Models={}}do local bJ=6 local bK:
+Folder?local bL:DepthOfFieldEffect?local bM={}local function bN():Camera?return o.CurrentCamera end local function bO():
+Folder?local bP=bN()if not bP then return nil end if not bK or not bK.Parent then bK=Instance.new'Folder'bK.Name=
+'FluentAcrylic'end if bK.Parent~=bP then bK.Parent=bP end return bK end local function bP(bQ:Vector2,bR:number):Vector3
+local bS=bN()::Camera local bT=bS:ScreenPointToRay(bQ.X,bQ.Y)local bU=math.max(bT.Direction:Dot(bS.CFrame.LookVector),
+0.0001)return bT.Origin+bT.Direction*(bR/bU)end local function bQ():Part return bl('Part',{Name='Body',Color=Color3.new(
+0,0,0),Material=Enum.Material.Glass,Size=Vector3.new(1,1,0),Anchored=true,CanCollide=false,CanQuery=false,CanTouch=false
+,Locked=true,CastShadow=false,Transparency=0.98},{bl('SpecialMesh',{MeshType=Enum.MeshType.Brick,Offset=Vector3.new(0,0,
+-0.000001)})})end local function bR(bS:number):number return 1-(bS-0.5)/bJ end function bI.Init()if bI.Initialized then
+return end bI.Initialized=true bL=Instance.new'DepthOfFieldEffect'bL.Name='FluentAcrylicBlur'bL.FarIntensity=0 bL.
+InFocusRadius=0.1 bL.NearIntensity=1 local function bS(bT:Instance)if bT:IsA'DepthOfFieldEffect'and bT~=bL then bM[bT]=
+bT.Enabled end end for bT,bU in i:GetChildren()do bS(bU)end local bT=bN()if bT then for bU,bV in bT:GetChildren()do bS(
+bV)end end end function bI.Enable()if not bI.Initialized then bI.Init()end bI.Enabled=true for bS in bM do if bS.Parent
+then bS.Enabled=false end end(bL::DepthOfFieldEffect).Parent=i end function bI.Disable()if not bI.Initialized then
+return end bI.Enabled=false for bS,bT in bM do if bS.Parent then bS.Enabled=bT end end(bL::DepthOfFieldEffect).Parent=
+nil end function bI.Destroy()bI.Disable()for bS in bI.Models do pcall(function()bS:Destroy()end)end table.clear(bI.
+Models)if bL then bL:Destroy()bL=nil end if bK then bK:Destroy()bK=nil end table.clear(bM)bI.Initialized=false end
+function bI.Blur(bS:number?)local bT={Radius=13,Visible=true}local bU={}local bV=bS or 0.001 local bW,bX=Vector2.zero,
+Vector2.zero local bY=bQ()bY.Parent=bO()bI.Models[bY]=true local bZ=bY:FindFirstChildOfClass'SpecialMesh'::SpecialMesh
+local b_,b0={},{}for b1=1,bJ*2 do b_[b1]=bQ()b0[b1]=b_[b1]:FindFirstChildOfClass'SpecialMesh'::SpecialMesh b_[b1].Parent
+=bY end table.insert(bU,bY:GetPropertyChangedSignal'Transparency':Connect(function()for b1,b2 in b_ do b2.Transparency=
+bY.Transparency end end))local b1=table.create(bJ*2+1)local b2=table.create(bJ*2+1)b1[1]=bY for b3=1,bJ*2 do b1[b3+1]=b_
+[b3]end local b3:number?local b4:number?local b5:number?local function b6(b7:number?,b8:number):boolean return b7~=nil
+and math.abs(b7-b8)<=math.abs(b7)*0.000001 end local function b7():Vector2 if typeof(y.AcrylicOffset)=='Vector2'then
+return y.AcrylicOffset end return Vector2.zero end local function b8()local b9=bN()if not b9 or not bY.Parent then
+return end if bY.Parent~=bO()then bY.Parent=bO()end if bX.X<1 or bX.Y<1 or not bT.Visible or not y.Acrylic then return
+end local ca=b7()local cb=bP(bW+ca,bV)local cc=bP(bW+Vector2.new(bX.X,0)+ca,bV)local I=bP(bW+bX+ca,bV)local J=(cc-cb).
+Magnitude local K=(cc-I).Magnitude local L=CFrame.fromMatrix((cb+I)/2,b9.CFrame.XVector,b9.CFrame.YVector,b9.CFrame.
+ZVector)local M=math.min(bT.Radius*(J/math.max(bX.X,1)),J/2,K/2)local N=M/bJ local O=not(b6(b3,J)and b6(b4,K)and b6(b5,M
+))if O then b3,b4,b5=J,K,M bZ.Scale=Vector3.new(J,math.max(K-M*2,0),0)end b2[1]=L for P=1,bJ do local Q=K/2-(P-0.5)*N b2
+[P+1]=L*CFrame.new(0,Q,0)b2[bJ+P+1]=L*CFrame.new(0,-Q,0)if O then local R=M-math.sqrt(math.max(M*M-(M*bR(P))^2,0))local
+S=Vector3.new(math.max(J-R*2,0),N,0)b0[P].Scale=S b0[bJ+P].Scale=S end end local P=pcall(o.BulkMoveTo,o,b1,b2,Enum.
+BulkMoveMode.FireCFrameChanged)if not P then for Q,R in b1 do R.CFrame=b2[Q]end end end local b9=false local function ca
+()if b9 then return end b9=true task.defer(function()b9=false b8()end)end local cb=bN()if cb then table.insert(bU,cb:
+GetPropertyChangedSignal'CFrame':Connect(ca))table.insert(bU,cb:GetPropertyChangedSignal'ViewportSize':Connect(ca))table
+.insert(bU,cb:GetPropertyChangedSignal'FieldOfView':Connect(ca))end bT.Frame=bl('Frame',{Name='AcrylicBlurAnchor',
 BackgroundTransparency=1,Size=UDim2.fromScale(1,1)})local function cc()bW,bX=bT.Frame.AbsolutePosition,bT.Frame.
 AbsoluteSize ca()end table.insert(bU,bT.Frame:GetPropertyChangedSignal'AbsolutePosition':Connect(cc))table.insert(bU,bT.
 Frame:GetPropertyChangedSignal'AbsoluteSize':Connect(cc))bT.Model=bY function bT.SetVisibility(I:boolean)bT.Visible=I
@@ -3372,27 +3373,27 @@ TitleBar.SubTitle.Text~=''end local cp=bV.Root:FindFirstChildOfClass'UICorner'lo
 RemoveTag(cq)cq.Color=Color3.new(1,1,1)cq.Transparency=0 elseif bV.BorderColor then ac.RemoveTag(cq)cq.Color=bV.
 BorderColor cq.Transparency=0 else ac.OverrideTag(cq,{Color='AcrylicBorder'})cq.Transparency=(y.UseAcrylic and y.Acrylic
 )and 0.5 or 0 end end function bV:ApplyPaint()local cu=bV.Paint local cv=y.UseAcrylic and y.Acrylic and true or false
-local cw=bV.Opacity*(if y.Transparency then 0.92 else 1)local function cx(cy:number):number return 1-(1-cy)*cw end cu.
-Base.BackgroundTransparency=if cv then cx(0.9)else 1 cu.Main.BackgroundTransparency=if cv then cx(0.45)else 1 cu.Fill.
-BackgroundTransparency=cx(if cv then 0.4 else 0)cu.Grain.Visible=cv cu.Noise.Visible=cv cu.Grain.ImageTransparency=0.98
-if bV.AcrylicBlur then bV.AcrylicBlur.SetVisibility(bV.Root.Visible)end if not bV.Rainbow and not bV.BorderColor then cq
-.Transparency=if cv then 0.5 else 0 end end function bV:SetCornerRadius(cu)bV.CornerRadius=math.clamp(tonumber(cu)or 13,
-0,24)cp.CornerRadius=UDim.new(0,bV.CornerRadius)bV.Paint:SetRadius(bV.CornerRadius)if bV.AcrylicBlur then bV.AcrylicBlur
-.SetRadius(bV.CornerRadius)end if bV.BgCorner then y.Background.LayoutKey=nil y.Background:ApplyLayout()end end function
-bV:SetBorder(cu,cv)bV.BorderThickness=math.clamp(tonumber(cu)or 1,0,4)cq.Thickness=bV.BorderThickness bV.BorderColor=cv
-ct()end function bV:SetRainbowBorder(cu)bV.Rainbow=cu and true or false cr.Enabled=bV.Rainbow ct()if bV.Rainbow and not
-cs then cs=ac.AddSignal(u,function()cr.Rotation=(os.clock()*90)%360 end)elseif not bV.Rainbow and cs then cs:Disconnect(
-)cs=nil end end function bV:SetOpacity(cu)bV.Opacity=math.clamp(tonumber(cu)or 1,0.2,1)bV:ApplyPaint()if y.Background
-and y.Background.Layer then y.Background:Refresh()end end function bV:SetPanelDepth(cu)y:SetPanelDepth(cu)end function
-bV:SetIconHue(cu)y:SetIconHue(cu)end function bV:SetIconStyle(cu)y:SetIconStyle(cu)end function bV:SetColorfulIcons(cu)y
-:SetColorfulIcons(cu)end function bV:GetAppearance()return{Layout=bV.LayoutMode,NavPosition=bV.NavPosition,NavLabelMode=
-bV.ShowTabLabels,NotificationPosition=y.NotificationPosition,ColorfulIcons=y.ColorfulIcons,IconHue=y.IconHue,IconStyle=y
-.IconStyle,PanelDepth=y.PanelDepth,HoverStyle=y.HoverStyle,CornerRadius=bV.CornerRadius,BorderThickness=bV.
-BorderThickness or cq.Thickness,BorderColor=bV.BorderColor,RainbowBorder=bV.Rainbow or false,Opacity=bV.Opacity,
-TitleTextVisible=bV.TitleBar.Title.Visible,SubTitleVisible=bV.SubTitleShown~=false}end function bV:ApplyAppearance(cu)if
-type(cu)~='table'then return end if cu.CornerRadius~=nil then bV:SetCornerRadius(cu.CornerRadius)end if cu.
-BorderThickness~=nil or cu.BorderColor~=nil then bV:SetBorder(cu.BorderThickness or bV.BorderThickness or 1,cu.
-BorderColor)end if cu.RainbowBorder~=nil then bV:SetRainbowBorder(cu.RainbowBorder)end if cu.Opacity~=nil then bV:
+local cw=y:GetVisibility()local function cx(cy:number):number return 1-(1-cy)*cw end cu.Base.BackgroundTransparency=if
+cv then cx(0.9)else 1 cu.Main.BackgroundTransparency=if cv then cx(0.45)else 1 cu.Fill.BackgroundTransparency=cx(if cv
+then 0.4 else 0)cu.Grain.Visible=cv cu.Noise.Visible=cv cu.Grain.ImageTransparency=0.98 if bV.AcrylicBlur then bV.
+AcrylicBlur.SetVisibility(bV.Root.Visible)end if not bV.Rainbow and not bV.BorderColor then cq.Transparency=if cv then
+0.5 else 0 end end function bV:SetCornerRadius(cu)bV.CornerRadius=math.clamp(tonumber(cu)or 13,0,24)cp.CornerRadius=UDim
+.new(0,bV.CornerRadius)bV.Paint:SetRadius(bV.CornerRadius)if bV.AcrylicBlur then bV.AcrylicBlur.SetRadius(bV.
+CornerRadius)end if bV.BgCorner then y.Background.LayoutKey=nil y.Background:ApplyLayout()end end function bV:SetBorder(
+cu,cv)bV.BorderThickness=math.clamp(tonumber(cu)or 1,0,4)cq.Thickness=bV.BorderThickness bV.BorderColor=cv ct()end
+function bV:SetRainbowBorder(cu)bV.Rainbow=cu and true or false cr.Enabled=bV.Rainbow ct()if bV.Rainbow and not cs then
+cs=ac.AddSignal(u,function()cr.Rotation=(os.clock()*90)%360 end)elseif not bV.Rainbow and cs then cs:Disconnect()cs=nil
+end end function bV:SetOpacity(cu)bV.Opacity=math.clamp(tonumber(cu)or 1,0.2,1)bV:ApplyPaint()if y.Background and y.
+Background.Layer then y.Background:Refresh()end y:RefreshOpacity()end function bV:SetPanelDepth(cu)y:SetPanelDepth(cu)
+end function bV:SetIconHue(cu)y:SetIconHue(cu)end function bV:SetIconStyle(cu)y:SetIconStyle(cu)end function bV:
+SetColorfulIcons(cu)y:SetColorfulIcons(cu)end function bV:GetAppearance()return{Layout=bV.LayoutMode,NavPosition=bV.
+NavPosition,NavLabelMode=bV.ShowTabLabels,NotificationPosition=y.NotificationPosition,ColorfulIcons=y.ColorfulIcons,
+IconHue=y.IconHue,IconStyle=y.IconStyle,PanelDepth=y.PanelDepth,HoverStyle=y.HoverStyle,CornerRadius=bV.CornerRadius,
+BorderThickness=bV.BorderThickness or cq.Thickness,BorderColor=bV.BorderColor,RainbowBorder=bV.Rainbow or false,Opacity=
+bV.Opacity,TitleTextVisible=bV.TitleBar.Title.Visible,SubTitleVisible=bV.SubTitleShown~=false}end function bV:
+ApplyAppearance(cu)if type(cu)~='table'then return end if cu.CornerRadius~=nil then bV:SetCornerRadius(cu.CornerRadius)
+end if cu.BorderThickness~=nil or cu.BorderColor~=nil then bV:SetBorder(cu.BorderThickness or bV.BorderThickness or 1,cu
+.BorderColor)end if cu.RainbowBorder~=nil then bV:SetRainbowBorder(cu.RainbowBorder)end if cu.Opacity~=nil then bV:
 SetOpacity(cu.Opacity)end if cu.IconStyle~=nil then y:SetIconStyle(cu.IconStyle)end if cu.ColorfulIcons~=nil then y:
 SetColorfulIcons(cu.ColorfulIcons)end if cu.IconHue~=nil then y:SetIconHue(cu.IconHue)end if cu.PanelDepth~=nil then y:
 SetPanelDepth(cu.PanelDepth)end if cu.HoverStyle~=nil then y:SetHoverStyle(cu.HoverStyle)end if cu.NavLabelMode~=nil
@@ -4853,89 +4854,90 @@ Services[bV]=nil local bX=table.find(y.ServiceOrder,bV)if bX then table.remove(y
 }`)end end y:Emit('ServiceUnregistered',bV)return true end function y:GetHelper(bV:string)assert(y.Helper,
 [[GetHelper - Helper is not attached, load Helper.lua and call SetLibrary first]])return y.Helper:GetHelper(bV)end y.
 Internals={Creator=ac,Components=bv,New=bl,Corner=bx,Stroke=bz,Label=bA,Asset=bw,MakeRow=bN,Bind=bO,Place=bP,Resolve=D,
-Signal=z,Flipper=A,Themes=w,Fonts=bn,Icons=F,Services=y.Services,Tabs=bv.Tab,Notification=bK,GUI=bo}function y:GetTabs()
-local bV={}for bW=1,bv.Tab.TabCount do local bX=bv.Tab.Tabs[bW]if bX then table.insert(bV,bX)end end return bV end
-function y:GetTab(bV)for bW,bX in y:GetTabs()do if bX==bV or bX.Id==bV or bX.Name==bV then return bX end end return nil
-end function y:AddAlias(bV,bW)assert(type(bW)=='string'and bW~='','AddAlias - Expected a target name')local bX=if string
-.sub(bW,1,3)=='Add'then bW else'Add'..bW local bY=if type(bV)=='table'then bV else{bV}for bZ,b_ in bY do assert(type(b_)
-=='string'and b_~='','AddAlias - Expected an alias name')y.Aliases[b_]=bX end return y end function y:RemoveAlias(bV)if
-y.Aliases[bV]==nil then return false end y.Aliases[bV]=nil return true end function y:GetAliases()return table.clone(y.
-Aliases)end function y:RegisterElement(bV,bW)assert(type(bV)=='table','RegisterElement - Expected a component table')
-assert(type(bV.__type)=='string','RegisterElement - Missing __type')assert(type(bV.New)=='function',
-'RegisterElement - Missing New')local bX=bV.__type local bY='Add'..bX if rawget(x,bY)~=nil then assert(bW==true,
-'RegisterElement - '..bY..' already exists')assert(not bM[bX],'RegisterElement - Built in elements cannot be replaced')
-end y.Custom[bX]=bV bU(bV)return bY end function y:UnregisterElement(bV)if not y.Custom[bV]then return false end y.
-Custom[bV]=nil x['Add'..bV]=nil return true end export type IntroOptions={Title:string,Source:any,Icon:any,Tint:boolean?
-,Corner:number?,Size:UDim2?}local bV={Active=false,Shown=false,Built=false,Window=nil,Gui=nil,Connection=nil,Options=nil
-,Activity=0,Watchers={},Holds={},Queue={}}local bW={BackdropTransparency=0.5,CardSize=Vector2.new(300,176),CardRadius=20
-,StartScale=0.9,EnterTotal=0.7,LoadTime=0.45,LoadFrames=8,LoadTimeout=4,FillTime=0.22,HoldTime=0.1,MorphTime=0.5,
-RevealTime=0.3,RevealFrames=4,RevealTimeout=0.6,MaxStep=1/12,Ceiling=0.92,SpikeFloor=0.04,SpikeFactor=2.2,BaselineRate=
-0.05,QueueGrace=8}local function bX(bY:number):number return 1-(1-bY)^3 end local function bY(bZ:number):number if bZ<
-0.5 then return 4*bZ*bZ*bZ end return 1-(-2*bZ+2)^3/2 end local function bZ(b_:number):number local b0=1.70158 local b1=
-b_-1 return 1+(b0+1)*b1^3+b0*b1^2 end local function b_(b0:number,b1:number):number return if b1<=0 then 1 else math.
-min(b0/b1,1)end local function b0(b1:number,b2:number,b3:number,b4:number):number return b_(math.max(b1-b2*b4,0),b3*b4)
-end local function b1(b2:number,b3:number,b4:number):number return b2+(b3-b2)*b4 end function bV.Cleanup()local b2=bV.
-Connection if b2 then b2:Disconnect()bV.Connection=nil end for b3,b4 in bV.Watchers do b4:Disconnect()end table.clear(bV
-.Watchers)local b3=bV.Gui if b3 then bV.Gui=nil b3:Destroy()end bV.Active=false bV.Shown=false bV.Built=false bV.Window=
-nil bV.Options=nil y.IntroActive=false table.clear(bV.Holds)end function bV.Reveal()local b2=bV.Window if b2 and b2.Root
-and b2.Root.Parent then b2.Root.Visible=not b2.Minimized end end function bV.Flush()local b2=table.clone(bV.Queue)table.
-clear(bV.Queue)for b3,b4 in b2 do bK:New(b4)end end function bV.Touch()bV.Activity=os.clock()end function bV.IsBusy(b2:
-number):boolean if next(bV.Holds)~=nil or ac.ThemeBusy or F.IsBusy()then return true end if not game:IsLoaded()then
-return true end if b2<bW.QueueGrace then local b3,b4=pcall(function()return d.RequestQueueSize end)return b3 and b4>0
-end return false end function bV.Begin(b2:IntroOptions)if bV.Active then return end bV.Options=b2 bV.Active=true bV.
-Shown=false bV.Built=false bV.Activity=os.clock()y.IntroActive=true for b3,b4 in{'TabAdded','SectionAdded',
-'ElementAdded','ActionAdded'}do table.insert(bV.Watchers,y.Events[b4]:Connect(bV.Touch))end local b3=0 local b4=0 local
-b5=1/60 bV.Connection=u:Connect(function(b6:number)if y.Unloaded then bV.Cleanup()return end b3+=b6 local b7=b6>math.
-max(b5*bW.SpikeFactor,bW.SpikeFloor)if b7 then b4=0 bV.Touch()else b4+=1 b5+=(b6-b5)*bW.BaselineRate end local b8=y.
-Config local b9=os.clock()-bV.Activity>=b8.IntroQuietTime local ca=bV.Built and b9 and b4>=b8.IntroStableFrames and not
-bV.IsBusy(b3)if ca or b3>=b8.IntroTimeout then bV.Connection:Disconnect()bV.Connection=nil bV.Play()end end)end function
-bV.Play()local b2=bV.Options::IntroOptions local b3=bV.Window local b4=bW.CardSize local b5=if b3 then b3.CornerRadius
-else 13 local b6=b2.Tint if b6==nil then b6=type(b2.Source)=='string'and y:GetIconData(b2.Source,nil,nil,'TitleBar')~=
-nil end local b7=bl('ScreenGui',{DisplayOrder=1000,IgnoreGuiInset=true,ResetOnSpawn=false,Parent=bo.Parent})v(b7)bV.Gui=
-b7 local b8=bl('Frame',{Size=UDim2.fromScale(1,1),BackgroundTransparency=1,BorderSizePixel=0,Parent=b7,ThemeTag={
-BackgroundColor3='Overlay'}})local b9=bl('Frame',{Size=UDim2.fromScale(0,1),BorderSizePixel=0,ThemeTag={BackgroundColor3
-='Accent'}},{bx(2)})local ca=bl('CanvasGroup',{Size=UDim2.fromOffset(168,3),BackgroundTransparency=0.86,BorderSizePixel=
-0,GroupTransparency=1,LayoutOrder=3,ThemeTag={BackgroundColor3='SliderRail'}},{bx(2),b9})local cb=bA{Text=b2.Title,
-RichText=true,TextSize=22,Weight='SemiBold',Size=UDim2.new(1,-48,0,0),AutomaticSize=Enum.AutomaticSize.Y,TextWrapped=
-true,TextXAlignment=Enum.TextXAlignment.Center,TextTransparency=1,LayoutOrder=2}local cc={bl('UIListLayout',{
-FillDirection=Enum.FillDirection.Vertical,HorizontalAlignment=Enum.HorizontalAlignment.Center,VerticalAlignment=Enum.
-VerticalAlignment.Center,SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,14)}),cb,ca}local cd local ce if b2.
-Icon then ce=bl('UIScale',{Scale=0})cd=bl('ImageLabel',{Size=UDim2.fromOffset(56,56),BackgroundTransparency=1,
-ImageTransparency=1,LayoutOrder=1},{bx(b2.Corner or 0),ce})ac.SetImage(cd,b2.Icon)if b6 then ac.OverrideTag(cd,{
-ImageColor3='Text'})else cd.ImageColor3=Color3.new(1,1,1)end table.insert(cc,cd)end local cf=bl('CanvasGroup',{Size=
-UDim2.fromOffset(b4.X,b4.Y),AnchorPoint=Vector2.new(0.5,0.5),Position=UDim2.fromScale(0.5,0.5),BackgroundTransparency=1}
-,cc)local cg=bl('UIStroke',{ApplyStrokeMode=Enum.ApplyStrokeMode.Border,Transparency=1,ThemeTag={Color='AcrylicBorder'}}
-)local ch=bl('UIScale',{Scale=bW.StartScale})local ci=bx(bW.CardRadius)local cj=bl('Frame',{AnchorPoint=Vector2.new(0.5,
-0.5),Position=UDim2.fromScale(0.5,0.5),Size=UDim2.fromOffset(b4.X,b4.Y),BackgroundTransparency=1,BorderSizePixel=0,
-Parent=b7,ThemeTag={BackgroundColor3='AcrylicMain'}},{ci,cg,ch,cf})local function ck():(Vector2,Vector2)local cl=if b3
-then b3.Root else nil if cl and cl.Parent then local cn=cl.AbsoluteSize return cn,cl.AbsolutePosition-b7.
-AbsolutePosition+cn/2 end return b4,b7.AbsoluteSize/2 end local cl='Enter'local cn=0 local co=0 local cp=0 local cq=0
-local cr=0 local cs=1/60 local ct=b4 local cu=Vector2.zero local cv=b4 local cw=Vector2.zero bV.Connection=u:Connect(
-function(cx:number)if y.Unloaded then bV.Cleanup()return end local cy=y.Config local cz=if cy.ReducedMotion then 0 else
-1/cy.AnimationSpeed local cA=math.min(cx,bW.MaxStep)co+=cA if cx>math.max(cs*bW.SpikeFactor,bW.SpikeFloor)then cp=0 else
-cp+=1 cs+=(cx-cs)*bW.BaselineRate end if ce and cl~='Enter'and cl~='Dissolve'then ce.Scale=1+0.025*math.sin(co*2.4)end
-if cl=='Enter'then cn+=cA local cB=bX(b0(cn,0,0.35,cz))local cC=b0(cn,0.08,0.5,cz)local cD=bX(cC)local cE=b0(cn,0.2,0.5,
-cz)b8.BackgroundTransparency=b1(1,bW.BackdropTransparency,cB)cj.BackgroundTransparency=1-cD cg.Transparency=1-cD ch.
-Scale=b1(bW.StartScale,1,bZ(cC))cb.TextTransparency=1-bX(b0(cn,0.3,0.35,cz))ca.GroupTransparency=1-bX(b0(cn,0.38,0.3,cz)
-)if cd and ce then ce.Scale=bZ(cE)cd.ImageTransparency=1-bX(cE)end if cn>=bW.EnterTotal*cz then cl='Load'cn=0 cp=0 bV.
-Shown=true end elseif cl=='Load'then cn+=cA cq+=(bW.Ceiling-cq)*math.min(cA*3,1)b9.Size=UDim2.fromScale(cq,1)local cB=cp
->=bW.LoadFrames and next(bV.Holds)==nil if(cB and cn>=bW.LoadTime*cz)or cn>=bW.LoadTimeout then cl='Fill'cn=0 cr=cq end
-elseif cl=='Fill'then cn+=cA local cB=bX(b_(cn,bW.FillTime*cz))b9.Size=UDim2.fromScale(b1(cr,1,cB),1)if cB>=1 then cl=
-'Hold'cn=0 end elseif cl=='Hold'then cn+=cA if cn>=bW.HoldTime*cz then cl='Morph'cn=0 ct=b4 cu=b7.AbsoluteSize/2 cv,cw=
-ck()ch.Scale=1 end elseif cl=='Morph'then cn+=cA local cB=b_(cn,bW.MorphTime*cz)local cC=bY(cB)local cD=ct:Lerp(cv,cC)
-local cE=cu:Lerp(cw,cC)cj.Size=UDim2.fromOffset(math.round(cD.X),math.round(cD.Y))cj.Position=UDim2.fromOffset(math.
-round(cE.X),math.round(cE.Y))ci.CornerRadius=UDim.new(0,b1(bW.CardRadius,b5,cC))cf.GroupTransparency=bX(b_(cn,0.2*cz))b8
-.BackgroundTransparency=b1(bW.BackdropTransparency,1,bX(cB))if cB>=1 then cl='Reveal'cn=0 cp=0 bV.Reveal()end elseif cl
-=='Reveal'then cn+=cA if(cp>=bW.RevealFrames and cn>=0.05)or cn>=bW.RevealTimeout then cl='Dissolve'cn=0 end else cn+=cA
-local cB=bX(b_(cn,bW.RevealTime*cz))cj.BackgroundTransparency=cB cg.Transparency=cB ch.Scale=b1(1,1.015,cB)if cB>=1 then
-bV.Cleanup()y.Events.IntroFinished:Fire()bV.Flush()end end end)end function y:HoldIntro(b2:string?):()->()if not bV.
-Active then return function()end end local b3={}bV.Holds[b3]=b2 or'Hold'bV.Touch()return function()bV.Holds[b3]=nil bV.
-Touch()end end function y:CreateWindow(b2)assert(b2.Title,'Window - Missing Title')if y.Window then return y.Window end
-y.MinimizeKey=b2.MinimizeKey or Enum.KeyCode.LeftControl local b3=w.Aliases[b2.Theme]or b2.Theme y.Theme=w[b3]and b3 or
-'Light'y.ColorfulIcons=b2.ColorfulIcons or false y.LockIdentity=b2.LockIdentity==true y.IconStyle=b2.IconStyle=='Tile'
-and'Tile'or'Plain'y.PanelDepth=math.clamp(tonumber(b2.PanelDepth)or 1,0,2)y.IconHue=math.clamp(tonumber(b2.IconHue)or 0,
-0,360)y.Layout=string.lower(tostring(b2.Layout or'Fluent'))=='macos'and'MacOS'or'Fluent'y.NavPosition=b2.NavPosition or
-'Top'y.UseAcrylic=b2.Acrylic==true y.Acrylic=y.UseAcrylic y.BlurEnabled=b2.UiBlur~=false y.AcrylicPanelAlpha=if b2.
+Signal=z,Shadow=bG,Flipper=A,Themes=w,Fonts=bn,Icons=F,Services=y.Services,Tabs=bv.Tab,Notification=bK,GUI=bo}function y
+:GetTabs()local bV={}for bW=1,bv.Tab.TabCount do local bX=bv.Tab.Tabs[bW]if bX then table.insert(bV,bX)end end return bV
+end function y:GetTab(bV)for bW,bX in y:GetTabs()do if bX==bV or bX.Id==bV or bX.Name==bV then return bX end end return
+nil end function y:AddAlias(bV,bW)assert(type(bW)=='string'and bW~='','AddAlias - Expected a target name')local bX=if
+string.sub(bW,1,3)=='Add'then bW else'Add'..bW local bY=if type(bV)=='table'then bV else{bV}for bZ,b_ in bY do assert(
+type(b_)=='string'and b_~='','AddAlias - Expected an alias name')y.Aliases[b_]=bX end return y end function y:
+RemoveAlias(bV)if y.Aliases[bV]==nil then return false end y.Aliases[bV]=nil return true end function y:GetAliases()
+return table.clone(y.Aliases)end function y:RegisterElement(bV,bW)assert(type(bV)=='table',
+'RegisterElement - Expected a component table')assert(type(bV.__type)=='string','RegisterElement - Missing __type')
+assert(type(bV.New)=='function','RegisterElement - Missing New')local bX=bV.__type local bY='Add'..bX if rawget(x,bY)~=
+nil then assert(bW==true,'RegisterElement - '..bY..' already exists')assert(not bM[bX],
+'RegisterElement - Built in elements cannot be replaced')end y.Custom[bX]=bV bU(bV)return bY end function y:
+UnregisterElement(bV)if not y.Custom[bV]then return false end y.Custom[bV]=nil x['Add'..bV]=nil return true end export
+type IntroOptions={Title:string,Source:any,Icon:any,Tint:boolean?,Corner:number?,Size:UDim2?}local bV={Active=false,
+Shown=false,Built=false,Window=nil,Gui=nil,Connection=nil,Options=nil,Activity=0,Watchers={},Holds={},Queue={}}local bW=
+{BackdropTransparency=0.5,CardSize=Vector2.new(300,176),CardRadius=20,StartScale=0.9,EnterTotal=0.7,LoadTime=0.45,
+LoadFrames=8,LoadTimeout=4,FillTime=0.22,HoldTime=0.1,MorphTime=0.5,RevealTime=0.3,RevealFrames=4,RevealTimeout=0.6,
+MaxStep=1/12,Ceiling=0.92,SpikeFloor=0.04,SpikeFactor=2.2,BaselineRate=0.05,QueueGrace=8}local function bX(bY:number):
+number return 1-(1-bY)^3 end local function bY(bZ:number):number if bZ<0.5 then return 4*bZ*bZ*bZ end return 1-(-2*bZ+2)
+^3/2 end local function bZ(b_:number):number local b0=1.70158 local b1=b_-1 return 1+(b0+1)*b1^3+b0*b1^2 end local 
+function b_(b0:number,b1:number):number return if b1<=0 then 1 else math.min(b0/b1,1)end local function b0(b1:number,b2:
+number,b3:number,b4:number):number return b_(math.max(b1-b2*b4,0),b3*b4)end local function b1(b2:number,b3:number,b4:
+number):number return b2+(b3-b2)*b4 end function bV.Cleanup()local b2=bV.Connection if b2 then b2:Disconnect()bV.
+Connection=nil end for b3,b4 in bV.Watchers do b4:Disconnect()end table.clear(bV.Watchers)local b3=bV.Gui if b3 then bV.
+Gui=nil b3:Destroy()end bV.Active=false bV.Shown=false bV.Built=false bV.Window=nil bV.Options=nil y.IntroActive=false
+table.clear(bV.Holds)end function bV.Reveal()local b2=bV.Window if b2 and b2.Root and b2.Root.Parent then b2.Root.
+Visible=not b2.Minimized end end function bV.Flush()local b2=table.clone(bV.Queue)table.clear(bV.Queue)for b3,b4 in b2
+do bK:New(b4)end end function bV.Touch()bV.Activity=os.clock()end function bV.IsBusy(b2:number):boolean if next(bV.Holds
+)~=nil or ac.ThemeBusy or F.IsBusy()then return true end if not game:IsLoaded()then return true end if b2<bW.QueueGrace
+then local b3,b4=pcall(function()return d.RequestQueueSize end)return b3 and b4>0 end return false end function bV.Begin
+(b2:IntroOptions)if bV.Active then return end bV.Options=b2 bV.Active=true bV.Shown=false bV.Built=false bV.Activity=os.
+clock()y.IntroActive=true for b3,b4 in{'TabAdded','SectionAdded','ElementAdded','ActionAdded'}do table.insert(bV.
+Watchers,y.Events[b4]:Connect(bV.Touch))end local b3=0 local b4=0 local b5=1/60 bV.Connection=u:Connect(function(b6:
+number)if y.Unloaded then bV.Cleanup()return end b3+=b6 local b7=b6>math.max(b5*bW.SpikeFactor,bW.SpikeFloor)if b7 then
+b4=0 bV.Touch()else b4+=1 b5+=(b6-b5)*bW.BaselineRate end local b8=y.Config local b9=os.clock()-bV.Activity>=b8.
+IntroQuietTime local ca=bV.Built and b9 and b4>=b8.IntroStableFrames and not bV.IsBusy(b3)if ca or b3>=b8.IntroTimeout
+then bV.Connection:Disconnect()bV.Connection=nil bV.Play()end end)end function bV.Play()local b2=bV.Options::
+IntroOptions local b3=bV.Window local b4=bW.CardSize local b5=if b3 then b3.CornerRadius else 13 local b6=b2.Tint if b6
+==nil then b6=type(b2.Source)=='string'and y:GetIconData(b2.Source,nil,nil,'TitleBar')~=nil end local b7=bl('ScreenGui',
+{DisplayOrder=1000,IgnoreGuiInset=true,ResetOnSpawn=false,Parent=bo.Parent})v(b7)bV.Gui=b7 local b8=bl('Frame',{Size=
+UDim2.fromScale(1,1),BackgroundTransparency=1,BorderSizePixel=0,Parent=b7,ThemeTag={BackgroundColor3='Overlay'}})local
+b9=bl('Frame',{Size=UDim2.fromScale(0,1),BorderSizePixel=0,ThemeTag={BackgroundColor3='Accent'}},{bx(2)})local ca=bl(
+'CanvasGroup',{Size=UDim2.fromOffset(168,3),BackgroundTransparency=0.86,BorderSizePixel=0,GroupTransparency=1,
+LayoutOrder=3,ThemeTag={BackgroundColor3='SliderRail'}},{bx(2),b9})local cb=bA{Text=b2.Title,RichText=true,TextSize=22,
+Weight='SemiBold',Size=UDim2.new(1,-48,0,0),AutomaticSize=Enum.AutomaticSize.Y,TextWrapped=true,TextXAlignment=Enum.
+TextXAlignment.Center,TextTransparency=1,LayoutOrder=2}local cc={bl('UIListLayout',{FillDirection=Enum.FillDirection.
+Vertical,HorizontalAlignment=Enum.HorizontalAlignment.Center,VerticalAlignment=Enum.VerticalAlignment.Center,SortOrder=
+Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,14)}),cb,ca}local cd local ce if b2.Icon then ce=bl('UIScale',{Scale=0})cd
+=bl('ImageLabel',{Size=UDim2.fromOffset(56,56),BackgroundTransparency=1,ImageTransparency=1,LayoutOrder=1},{bx(b2.Corner
+or 0),ce})ac.SetImage(cd,b2.Icon)if b6 then ac.OverrideTag(cd,{ImageColor3='Text'})else cd.ImageColor3=Color3.new(1,1,1)
+end table.insert(cc,cd)end local cf=bl('CanvasGroup',{Size=UDim2.fromOffset(b4.X,b4.Y),AnchorPoint=Vector2.new(0.5,0.5),
+Position=UDim2.fromScale(0.5,0.5),BackgroundTransparency=1},cc)local cg=bl('UIStroke',{ApplyStrokeMode=Enum.
+ApplyStrokeMode.Border,Transparency=1,ThemeTag={Color='AcrylicBorder'}})local ch=bl('UIScale',{Scale=bW.StartScale})
+local ci=bx(bW.CardRadius)local cj=bl('Frame',{AnchorPoint=Vector2.new(0.5,0.5),Position=UDim2.fromScale(0.5,0.5),Size=
+UDim2.fromOffset(b4.X,b4.Y),BackgroundTransparency=1,BorderSizePixel=0,Parent=b7,ThemeTag={BackgroundColor3=
+'AcrylicMain'}},{ci,cg,ch,cf})local function ck():(Vector2,Vector2)local cl=if b3 then b3.Root else nil if cl and cl.
+Parent then local cn=cl.AbsoluteSize return cn,cl.AbsolutePosition-b7.AbsolutePosition+cn/2 end return b4,b7.
+AbsoluteSize/2 end local cl='Enter'local cn=0 local co=0 local cp=0 local cq=0 local cr=0 local cs=1/60 local ct=b4
+local cu=Vector2.zero local cv=b4 local cw=Vector2.zero bV.Connection=u:Connect(function(cx:number)if y.Unloaded then bV
+.Cleanup()return end local cy=y.Config local cz=if cy.ReducedMotion then 0 else 1/cy.AnimationSpeed local cA=math.min(cx
+,bW.MaxStep)co+=cA if cx>math.max(cs*bW.SpikeFactor,bW.SpikeFloor)then cp=0 else cp+=1 cs+=(cx-cs)*bW.BaselineRate end
+if ce and cl~='Enter'and cl~='Dissolve'then ce.Scale=1+0.025*math.sin(co*2.4)end if cl=='Enter'then cn+=cA local cB=bX(
+b0(cn,0,0.35,cz))local cC=b0(cn,0.08,0.5,cz)local cD=bX(cC)local cE=b0(cn,0.2,0.5,cz)b8.BackgroundTransparency=b1(1,bW.
+BackdropTransparency,cB)cj.BackgroundTransparency=1-cD cg.Transparency=1-cD ch.Scale=b1(bW.StartScale,1,bZ(cC))cb.
+TextTransparency=1-bX(b0(cn,0.3,0.35,cz))ca.GroupTransparency=1-bX(b0(cn,0.38,0.3,cz))if cd and ce then ce.Scale=bZ(cE)
+cd.ImageTransparency=1-bX(cE)end if cn>=bW.EnterTotal*cz then cl='Load'cn=0 cp=0 bV.Shown=true end elseif cl=='Load'then
+cn+=cA cq+=(bW.Ceiling-cq)*math.min(cA*3,1)b9.Size=UDim2.fromScale(cq,1)local cB=cp>=bW.LoadFrames and next(bV.Holds)==
+nil if(cB and cn>=bW.LoadTime*cz)or cn>=bW.LoadTimeout then cl='Fill'cn=0 cr=cq end elseif cl=='Fill'then cn+=cA local
+cB=bX(b_(cn,bW.FillTime*cz))b9.Size=UDim2.fromScale(b1(cr,1,cB),1)if cB>=1 then cl='Hold'cn=0 end elseif cl=='Hold'then
+cn+=cA if cn>=bW.HoldTime*cz then cl='Morph'cn=0 ct=b4 cu=b7.AbsoluteSize/2 cv,cw=ck()ch.Scale=1 end elseif cl=='Morph'
+then cn+=cA local cB=b_(cn,bW.MorphTime*cz)local cC=bY(cB)local cD=ct:Lerp(cv,cC)local cE=cu:Lerp(cw,cC)cj.Size=UDim2.
+fromOffset(math.round(cD.X),math.round(cD.Y))cj.Position=UDim2.fromOffset(math.round(cE.X),math.round(cE.Y))ci.
+CornerRadius=UDim.new(0,b1(bW.CardRadius,b5,cC))cf.GroupTransparency=bX(b_(cn,0.2*cz))b8.BackgroundTransparency=b1(bW.
+BackdropTransparency,1,bX(cB))if cB>=1 then cl='Reveal'cn=0 cp=0 bV.Reveal()end elseif cl=='Reveal'then cn+=cA if(cp>=bW
+.RevealFrames and cn>=0.05)or cn>=bW.RevealTimeout then cl='Dissolve'cn=0 end else cn+=cA local cB=bX(b_(cn,bW.
+RevealTime*cz))cj.BackgroundTransparency=cB cg.Transparency=cB ch.Scale=b1(1,1.015,cB)if cB>=1 then bV.Cleanup()y.Events
+.IntroFinished:Fire()bV.Flush()end end end)end function y:HoldIntro(b2:string?):()->()if not bV.Active then return
+function()end end local b3={}bV.Holds[b3]=b2 or'Hold'bV.Touch()return function()bV.Holds[b3]=nil bV.Touch()end end
+function y:CreateWindow(b2)assert(b2.Title,'Window - Missing Title')if y.Window then return y.Window end y.MinimizeKey=
+b2.MinimizeKey or Enum.KeyCode.LeftControl local b3=w.Aliases[b2.Theme]or b2.Theme y.Theme=w[b3]and b3 or'Light'y.
+ColorfulIcons=b2.ColorfulIcons or false y.LockIdentity=b2.LockIdentity==true y.IconStyle=b2.IconStyle=='Tile'and'Tile'or
+'Plain'y.PanelDepth=math.clamp(tonumber(b2.PanelDepth)or 1,0,2)y.IconHue=math.clamp(tonumber(b2.IconHue)or 0,0,360)y.
+Layout=string.lower(tostring(b2.Layout or'Fluent'))=='macos'and'MacOS'or'Fluent'y.NavPosition=b2.NavPosition or'Top'y.
+UseAcrylic=b2.Acrylic==true y.Acrylic=y.UseAcrylic y.BlurEnabled=b2.UiBlur~=false y.AcrylicPanelAlpha=if b2.
 AcrylicPanelTransparency~=nil then math.clamp(tonumber(b2.AcrylicPanelTransparency)or 0,0,0.9)else nil if y.UseAcrylic
 then bI.Enable()end y.NotificationPosition=bK:SetPosition(b2.NotificationPosition or y.NotificationPosition)y.
 DefaultTitleIcon=b2.Logo or b2.TitleIcon local b4=b2.Logo or b2.TitleIcon if y.Config.Intro and not y.Unloaded then bV.
@@ -5084,32 +5086,39 @@ local cf,cg=pcall(h.JSONDecode,h,cd)if not cf then return false,'Theme JSON is n
 'table'then return false,'ImportTheme needs a table or a JSON string'end return y:CreateTheme(cd.Name,cd,ce)end function
 y:GetThemeBackground(cd)local ce=w[w.Aliases[cd]or cd]return ce and ce.Background or nil end function y:
 GetThemesWithBackground()local cd={}for ce,cf in next,w.Names do if y:GetThemeBackground(cf)then table.insert(cd,cf)end
-end return cd end function y:ToggleTransparency(cd)y.Transparency=cd and true or false if y.Window then y.Window:
-ApplyPaint()end end y.InternalMuted=false function y:MuteInternal(cd:boolean?)y.InternalMuted=cd~=false end function y:
-InternalNotify(cd)if y.InternalMuted then return nil end return y:Notify(cd)end function y:InternalToast(cd:any,ce:
-number?):any if y.InternalMuted then return nil end return y:Toast(cd,ce)end function y:Notify(cd)if bV.Active then
-table.insert(bV.Queue,cd)return nil end return bK:New(cd)end function y:Toast(cd:any,ce:number?,cf:any?):any if bV.
-Active then return nil end if type(cd)=='string'then cd={Text=cd,Duration=ce,Origin=cf}end return bL:New(cd)end function
-y:SetToastOrigin(cd:string,ce:string?):(string,string)local cf,cg=bL:SetOrigin(cd,ce)return cf,cg or cf end function y:
-GetToastOrigin():(string,string)return bL:GetOrigin()end y.AlertTimes={}function y:Alert(cd,ce)local cf=tostring(cd)
-local cg=os.clock()local ch=y.AlertTimes[cf]if ch and cg-ch<5 then return nil end y.AlertTimes[cf]=cg local ci,cj=pcall(
-function()return y:InternalNotify{Title='Interface',Content=ce=='Error'and'Error'or'Warning',SubContent=tostring(cd),
-Duration=5,Type=ce=='Error'and'Error'or'Warning'}end)return ci and cj or nil end y.DeferredMeasure=setmetatable({},{
-__mode='k'})y.DeferredMarquee=setmetatable({},{__mode='k'})function y:IsWindowBusy():boolean local cd=y.Window return cd
-~=nil and(cd.IsResizing==true or cd.IsAnimating==true)end function y:FlushDeferred()local cd,ce={},{}for cf in y.
-DeferredMeasure do table.insert(cd,cf)end for cf in y.DeferredMarquee do table.insert(ce,cf)end table.clear(y.
-DeferredMeasure)table.clear(y.DeferredMarquee)local cf=y.Window if cf and cf.UpdateSelection then cf:UpdateSelection(
-true)end task.spawn(function()local cg=os.clock()+0.004 for ch,ci in cd do if ci.Clip and ci.Clip.Parent then ci:
-MeasureIcon()end if os.clock()>cg then task.wait()cg=os.clock()+0.004 end end for ch,ci in ce do ac.QueueMarquee(ci)if
-os.clock()>cg then task.wait()cg=os.clock()+0.004 end end end)end function y:GetPanelAlpha():number local cd=y.
-PanelAlpha if y.UseAcrylic and y.Acrylic then local ce=y.AcrylicPanelAlpha or ac.GetThemeProperty'ElementTransparency'or
-0 cd*=1-math.clamp(ce,0,0.9)end return cd end function y:SetPanelAlpha(cd)y.PanelAlpha=math.clamp(tonumber(cd)or 1,0.05,
-1)local ce=y:GetPanelAlpha()for cf in next,y.PanelBackings do if cf.Parent then cf.BackgroundTransparency=ce>=0.999 and
-0 or 1 end end for cf in next,y.PanelLayers do if cf.Parent then cf.BackgroundTransparency=1-ce end end for cf,cg in
-next,y.PanelFills do if cf.Parent then cf.BackgroundTransparency=1-(1-cg)*ce end end for cf,cg in next,y.Shadows do bF(
-cg)end end function y:EnumFontPath(cd,ce)local cf,cg=pcall(function()return Font.fromEnum(Enum.Font[cd]).Family end)if
-cf and type(cg)=='string'and cg~=''then return cg end return ce end y.FontFamilies={{Name='Gotham',Path=y:EnumFontPath(
-'Gotham','rbxasset://fonts/families/GothamSSm.json')},{Name='Builder Sans',Path=y:EnumFontPath('BuilderSans',
+end return cd end function y:GetVisibility():number local cd=y.Window local ce=if cd and type(cd.Opacity)=='number'then
+cd.Opacity else 1 return ce*(if y.Transparency then 0.92 else 1)end function y:RefreshOpacity()local cd=y:GetVisibility(
+)for ce,cf in next,y.OpacityBindings do if ce.Parent then for cg,ch in next,cf do ce[cg]=1-(1-ch)*cd end end end y.
+Events.OpacityChanged:Fire(cd)end function y:ScaleOpacity(cd:number):number return 1-(1-cd)*y:GetVisibility()end
+function y:BindOpacity(cd:Instance,ce:string,cf:number,cg:boolean?):()->()local ch=y.OpacityBindings[cd]if not ch then
+ch={}y.OpacityBindings[cd]=ch end ch[ce]=cf if not cg then(cd::any)[ce]=y:ScaleOpacity(cf)end return function()local ci=
+y.OpacityBindings[cd]if ci then ci[ce]=nil if next(ci)==nil then y.OpacityBindings[cd]=nil end end end end function y:
+ToggleTransparency(cd)y.Transparency=cd and true or false if y.Window then y.Window:ApplyPaint()end y:RefreshOpacity()
+end y.InternalMuted=false function y:MuteInternal(cd:boolean?)y.InternalMuted=cd~=false end function y:InternalNotify(cd
+)if y.InternalMuted then return nil end return y:Notify(cd)end function y:InternalToast(cd:any,ce:number?):any if y.
+InternalMuted then return nil end return y:Toast(cd,ce)end function y:Notify(cd)if bV.Active then table.insert(bV.Queue,
+cd)return nil end return bK:New(cd)end function y:Toast(cd:any,ce:number?,cf:any?):any if bV.Active then return nil end
+if type(cd)=='string'then cd={Text=cd,Duration=ce,Origin=cf}end return bL:New(cd)end function y:SetToastOrigin(cd:string
+,ce:string?):(string,string)local cf,cg=bL:SetOrigin(cd,ce)return cf,cg or cf end function y:GetToastOrigin():(string,
+string)return bL:GetOrigin()end y.AlertTimes={}function y:Alert(cd,ce)local cf=tostring(cd)local cg=os.clock()local ch=y
+.AlertTimes[cf]if ch and cg-ch<5 then return nil end y.AlertTimes[cf]=cg local ci,cj=pcall(function()return y:
+InternalNotify{Title='Interface',Content=ce=='Error'and'Error'or'Warning',SubContent=tostring(cd),Duration=5,Type=ce==
+'Error'and'Error'or'Warning'}end)return ci and cj or nil end y.DeferredMeasure=setmetatable({},{__mode='k'})y.
+DeferredMarquee=setmetatable({},{__mode='k'})function y:IsWindowBusy():boolean local cd=y.Window return cd~=nil and(cd.
+IsResizing==true or cd.IsAnimating==true)end function y:FlushDeferred()local cd,ce={},{}for cf in y.DeferredMeasure do
+table.insert(cd,cf)end for cf in y.DeferredMarquee do table.insert(ce,cf)end table.clear(y.DeferredMeasure)table.clear(y
+.DeferredMarquee)local cf=y.Window if cf and cf.UpdateSelection then cf:UpdateSelection(true)end task.spawn(function()
+local cg=os.clock()+0.004 for ch,ci in cd do if ci.Clip and ci.Clip.Parent then ci:MeasureIcon()end if os.clock()>cg
+then task.wait()cg=os.clock()+0.004 end end for ch,ci in ce do ac.QueueMarquee(ci)if os.clock()>cg then task.wait()cg=os
+.clock()+0.004 end end end)end function y:GetPanelAlpha():number local cd=y.PanelAlpha if y.UseAcrylic and y.Acrylic
+then local ce=y.AcrylicPanelAlpha or ac.GetThemeProperty'ElementTransparency'or 0 cd*=1-math.clamp(ce,0,0.9)end return
+cd end function y:SetPanelAlpha(cd)y.PanelAlpha=math.clamp(tonumber(cd)or 1,0.05,1)local ce=y:GetPanelAlpha()for cf in
+next,y.PanelBackings do if cf.Parent then cf.BackgroundTransparency=ce>=0.999 and 0 or 1 end end for cf in next,y.
+PanelLayers do if cf.Parent then cf.BackgroundTransparency=1-ce end end for cf,cg in next,y.PanelFills do if cf.Parent
+then cf.BackgroundTransparency=1-(1-cg)*ce end end for cf,cg in next,y.Shadows do bF(cg)end end function y:EnumFontPath(
+cd,ce)local cf,cg=pcall(function()return Font.fromEnum(Enum.Font[cd]).Family end)if cf and type(cg)=='string'and cg~=''
+then return cg end return ce end y.FontFamilies={{Name='Gotham',Path=y:EnumFontPath('Gotham',
+'rbxasset://fonts/families/GothamSSm.json')},{Name='Builder Sans',Path=y:EnumFontPath('BuilderSans',
 'rbxasset://fonts/families/BuilderSans.json')},{Name='Nunito',Path=y:EnumFontPath('Nunito',
 'rbxasset://fonts/families/Nunito.json')},{Name='Roboto',Path=y:EnumFontPath('Roboto',
 'rbxasset://fonts/families/Roboto.json')},{Name='Source Sans',Path=y:EnumFontPath('SourceSans',
@@ -5913,6 +5922,9 @@ cO:string,cP:Dict?,cQ:{Instance}?):any return self:Track(self.Creator.New(cO,cP,
 Instance,cP:{[string]:string}):Instance return self.Creator.AddThemeObject(cO,cP)end function cM:Tween(cO:Instance,cP:
 number,cQ:Dict,cR:Enum.EasingStyle?,cS:Enum.EasingDirection?):Tween return self.Creator.Tween(cO,cP,cQ,cR,cS)end
 function cM:Icon(cO:ImageLabel|ImageButton,cP:(string|number)?,cQ:string?,cR:number?):boolean return cE(cO,cP,cQ,cR)end
+function cM:OnIntroFinished(cO:()->()):any if not y.IntroActive then self:Guard(cO)return nil end local cP cP=self:
+Connect(y.Events.IntroFinished,function()cP:Disconnect()cO()end)return cP end function cM:Shadow(cO:GuiObject,cP:number?
+,cQ:number?,cR:number?):any local cS=self.Internals.Shadow(cO,cP,cQ,cR)self:Track(cS.Image,'shadow')return cS end
 function cM:Layer(cO:string,cP:number?):ScreenGui local cQ=`{self.Id}.{cO}`local cR=y:CreateLayer(cQ,cP)self:Track(
 function()y:RemoveLayer(cQ)end,'layer')return cR end function cM:GetWindow():any return y.Window end function cM:
 RequireWindow(cO:string):any local cP=y.Window assert(cP,`[{self.Id}] {cO} - no window yet, use :OnWindow() or :WaitForWindow()`
